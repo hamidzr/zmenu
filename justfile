@@ -33,3 +33,7 @@ clean:
 
 visual:
 	scripts/visual_test.sh
+
+install: build
+	cp zig-out/bin/* ~/.local/bin/
+
