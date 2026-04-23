@@ -56,7 +56,7 @@ pub fn load(allocator: std.mem.Allocator, menu_id: []const u8) !?State {
 
 pub fn save(allocator: std.mem.Allocator, menu_id: []const u8, state: State) !void {
     const dir = try cacheDir(allocator, menu_id);
-    try std.fs.cwd().makePath(dir);
+    try std.Io.Dir.cwd().createDirPath(io_compat.globalIo(), dir);
     const path = try cacheFilePath(allocator, menu_id);
 
     const file = try io_compat.createFileAbsolute(path, .{ .truncate = true });

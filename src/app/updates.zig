@@ -27,7 +27,7 @@ pub const ItemUpdate = struct {
 
 pub const UpdateQueue = struct {
     allocator: std.mem.Allocator,
-    mutex: std.Io.Mutex = .{},
+    mutex: std.Io.Mutex = .init,
     items: std.ArrayList(ItemUpdate),
     next_batch: u64,
 
@@ -151,7 +151,7 @@ pub fn followStdinThread(queue: *UpdateQueue) void {
 }
 
 fn flushPendingStdinLine(queue: *UpdateQueue, pending: *std.ArrayList(u8)) void {
-    const trimmed = std.mem.trimRight(u8, pending.items, "\r");
+    const trimmed = std.mem.trimEnd(u8, pending.items, "\r");
     if (trimmed.len == 0) {
         pending.clearRetainingCapacity();
         return;
@@ -187,14 +187,14 @@ fn startIpcServer(queue: *UpdateQueue, menu_id: []const u8) ?[]const u8 {
     const path = ipc.socketPath(std.heap.c_allocator, menu_id) catch return null;
     var server = openIpcServer(path) catch return null;
 
-    const server_ptr = std.heap.c_allocator.create(std.net.Server) catch {
-        server.deinit();
+    const server_ptr = std.heap.c_allocator.create(std.Io.net.Server) catch {
+        server.deinit(io_compat.globalIo());
         return null;
     };
     server_ptr.* = server;
 
     _ = std.Thread.spawn(.{}, ipcServerLoop, .{ server_ptr, queue }) catch {
-        server.deinit();
+        server.deinit(io_compat.globalIo());
         std.heap.c_allocator.destroy(server_ptr);
         return null;
     };
@@ -202,28 +202,28 @@ fn startIpcServer(queue: *UpdateQueue, menu_id: []const u8) ?[]const u8 {
     return path;
 }
 
-fn openIpcServer(path: []const u8) !std.net.Server {
+fn openIpcServer(path: []const u8) !std.Io.net.Server {
     io_compat.deleteFileAbsolute(path) catch |err| switch (err) {
         error.FileNotFound => {},
         else => return err,
     };
 
-    const address = try std.net.Address.initUnix(path);
-    return std.net.Address.listen(address, .{});
+    const address = try std.Io.net.UnixAddress.init(path);
+    return address.listen(io_compat.globalIo(), .{});
 }
 
-fn ipcServerLoop(server: *std.net.Server, queue: *UpdateQueue) void {
+fn ipcServerLoop(server: *std.Io.net.Server, queue: *UpdateQueue) void {
     while (true) {
-        const conn = server.accept() catch continue;
-        handleIpcConnection(conn.stream, queue);
-        conn.stream.close();
+        const stream = server.accept(io_compat.globalIo()) catch continue;
+        handleIpcConnection(stream, queue);
+        stream.close(io_compat.globalIo());
     }
 }
 
-fn handleIpcConnection(stream: std.net.Stream, queue: *UpdateQueue) void {
+fn handleIpcConnection(stream: std.Io.net.Stream, queue: *UpdateQueue) void {
     var buf: [4096]u8 = undefined;
-    var reader = stream.reader(&buf);
-    const io_reader = reader.interface();
+    var reader = stream.reader(io_compat.globalIo(), &buf);
+    const io_reader = &reader.interface;
 
     while (true) {
         const line_opt = readLineAlloc(io_reader, std.heap.c_allocator, 64) catch return;
