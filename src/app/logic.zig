@@ -2,17 +2,27 @@ const std = @import("std");
 const objc = @import("objc");
 const cache = @import("../cache.zig");
 const exit_codes = @import("../exit_codes.zig");
+const io_compat = @import("../io_compat.zig");
 const menu = @import("../menu.zig");
 const pid = @import("../pid.zig");
+const time_compat = @import("../time_compat.zig");
 const objc_helpers = @import("objc_helpers.zig");
 const state = @import("state.zig");
+
+const stream_close_auto_accept_delay_ms: i64 = 150;
+
+pub const AutoAcceptTrigger = enum {
+    initial,
+    keystroke,
+    stream_close,
+};
 
 pub fn quit(app_state: *state.AppState, code: u8) void {
     if (app_state.pid_path) |path| {
         pid.remove(path);
     }
     if (app_state.ipc_path) |path| {
-        std.fs.deleteFileAbsolute(path) catch {};
+        io_compat.deleteFileAbsolute(path) catch {};
     }
     std.process.exit(code);
 }
@@ -48,9 +58,22 @@ pub fn applyFilter(app_state: *state.AppState, query: []const u8) void {
     app_state.table_view.msgSend(void, "reloadData", .{});
     updateSelection(app_state);
     updateMatchLabel(app_state);
-    if (app_state.config.auto_accept and app_state.model.filtered.items.len == 1) {
-        acceptSelection(app_state);
+}
+
+pub fn maybeAutoAccept(app_state: *state.AppState, trigger: AutoAcceptTrigger) void {
+    const filtered_len = app_state.model.filtered.items.len;
+    if (!app_state.config.auto_accept or !app_state.stream_closed or filtered_len != 1) {
+        app_state.pending_stream_close_auto_accept = false;
+        return;
     }
+
+    if (trigger == .stream_close and streamCloseAutoAcceptNeedsDelay(app_state.last_keystroke_ms, time_compat.milliTimestamp())) {
+        app_state.pending_stream_close_auto_accept = true;
+        return;
+    }
+
+    app_state.pending_stream_close_auto_accept = false;
+    acceptSelection(app_state);
 }
 
 pub fn moveSelection(app_state: *state.AppState, delta: isize) void {
@@ -71,7 +94,7 @@ pub fn saveCache(app_state: *state.AppState, selection: []const u8) void {
     cache.save(app_state.allocator, app_state.config.menu_id, .{
         .last_query = query,
         .last_selection = selection,
-        .last_selection_time = std.time.timestamp(),
+        .last_selection_time = time_compat.unixTimestamp(),
     }) catch {};
 }
 
@@ -108,8 +131,13 @@ fn firstFilteredItem(app_state: *state.AppState) menu.MenuItem {
 
 fn outputAndQuit(app_state: *state.AppState, label: []const u8, output: []const u8) void {
     saveCache(app_state, label);
-    std.fs.File.stdout().deprecatedWriter().print("{s}\n", .{output}) catch {};
+    io_compat.stdoutPrint("{s}\n", .{output}) catch {};
     quit(app_state, 0);
+}
+
+fn streamCloseAutoAcceptNeedsDelay(last_keystroke_ms: i64, now_ms: i64) bool {
+    if (last_keystroke_ms <= 0) return false;
+    return now_ms - last_keystroke_ms < stream_close_auto_accept_delay_ms;
 }
 
 pub const readItems = menu.readItems;

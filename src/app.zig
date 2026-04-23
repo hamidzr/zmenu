@@ -10,6 +10,7 @@ const updates = @import("app/updates.zig");
 const menu = @import("menu.zig");
 const pid = @import("pid.zig");
 const exit_codes = @import("exit_codes.zig");
+const io_compat = @import("io_compat.zig");
 
 const NSPoint = objc_helpers.NSPoint;
 const NSSize = objc_helpers.NSSize;
@@ -35,18 +36,18 @@ pub fn run(config: appconfig.Config) !void {
     var items: []menu.MenuItem = &[_]menu.MenuItem{};
     if (!config.ipc_only and !config.follow_stdin) {
         items = logic.readItems(allocator, config.show_icons) catch {
-            std.fs.File.stderr().deprecatedWriter().print("zmenu: stdin is empty\n", .{}) catch {};
+            io_compat.stderrPrint("zmenu: stdin is empty\n", .{}) catch {};
             std.process.exit(exit_codes.unknown_error);
         };
     } else {
         items = allocator.alloc(menu.MenuItem, 0) catch {
-            std.fs.File.stderr().deprecatedWriter().print("zmenu: unable to allocate items\n", .{}) catch {};
+            io_compat.stderrPrint("zmenu: unable to allocate items\n", .{}) catch {};
             std.process.exit(exit_codes.unknown_error);
         };
     }
 
     const pid_path = pid.create(allocator, config.menu_id) catch {
-        std.fs.File.stderr().deprecatedWriter().print("zmenu: another instance is running\n", .{}) catch {};
+        io_compat.stderrPrint("zmenu: another instance is running\n", .{}) catch {};
         std.process.exit(exit_codes.unknown_error);
     };
     defer pid.remove(pid_path);
@@ -297,6 +298,9 @@ pub fn run(config: appconfig.Config) !void {
         .allocator = allocator,
         .update_queue = queue.queue,
         .ipc_path = queue.ipc_path,
+        .stream_closed = !config.follow_stdin and !config.ipc_only,
+        .last_keystroke_ms = 0,
+        .pending_stream_close_auto_accept = false,
         .had_focus = false,
     };
     defer app_state.model.deinit(allocator);
@@ -329,6 +333,7 @@ pub fn run(config: appconfig.Config) !void {
     } else {
         logic.applyFilter(&app_state, "");
     }
+    logic.maybeAutoAccept(&app_state, .initial);
 
     app.msgSend(void, "activateIgnoringOtherApps:", .{true});
     window.msgSend(void, "makeKeyAndOrderFront:", .{@as(objc.c.id, null)});

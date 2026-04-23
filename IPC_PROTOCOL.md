@@ -54,7 +54,8 @@ zmenu re-filters the list after each update using the current query text.
 
 When `--ipc-only` (or config `ipc_only: true`) is set, zmenu ignores stdin and
 starts with an empty list. On accept, it prints the full JSON item to stdout on a
-single line, preserving any extra item fields. Cancels exit non-zero without
+single line, preserving any extra item fields. `--auto-accept` does not fire in
+this mode because the item stream has no EOF. Cancels exit non-zero without
 stdout output.
 
 ## Size limits

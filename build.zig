@@ -15,14 +15,15 @@ pub fn build(b: *std.Build) void {
             .root_source_file = b.path("src/main.zig"),
             .target = target,
             .optimize = optimize,
+            .link_libc = true,
             .imports = &.{
                 .{ .name = "objc", .module = objc_dep.module("objc") },
             },
         }),
     });
 
-    exe.linkFramework("AppKit");
-    exe.linkFramework("Foundation");
+    exe.root_module.linkFramework("AppKit", .{});
+    exe.root_module.linkFramework("Foundation", .{});
 
     b.install_prefix = "bin";
     b.installArtifact(exe);
@@ -33,6 +34,7 @@ pub fn build(b: *std.Build) void {
             .root_source_file = b.path("src/zmenuctl.zig"),
             .target = target,
             .optimize = optimize,
+            .link_libc = true,
         }),
     });
     b.installArtifact(ctl);
@@ -50,6 +52,7 @@ pub fn build(b: *std.Build) void {
         .root_source_file = b.path("src/search.zig"),
         .target = target,
         .optimize = optimize,
+        .link_libc = true,
     });
     const search_tests = b.addTest(.{
         .name = "search",

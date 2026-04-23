@@ -1,4 +1,5 @@
 const std = @import("std");
+const io_compat = @import("io_compat.zig");
 const search = @import("search.zig");
 
 pub const MenuItem = struct {
@@ -29,8 +30,7 @@ pub const LineBuffer = struct {
 };
 
 pub fn readStdinLines(allocator: std.mem.Allocator, max_bytes: usize) !LineBuffer {
-    const stdin = std.fs.File.stdin();
-    const buffer = try stdin.readToEndAlloc(allocator, max_bytes);
+    const buffer = try io_compat.readAllFromFd(allocator, std.posix.STDIN_FILENO, max_bytes);
 
     var lines = std.ArrayList([]const u8).empty;
     errdefer lines.deinit(allocator);
@@ -64,7 +64,7 @@ pub fn parseItem(allocator: std.mem.Allocator, line: []const u8, index: usize, p
             const raw = label[1..close_idx];
             if (iconFromName(raw)) |kind| {
                 icon = kind;
-                label = std.mem.trimLeft(u8, label[close_idx + 1 ..], " \t");
+                label = std.mem.trimStart(u8, label[close_idx + 1 ..], " \t");
             }
         }
     }

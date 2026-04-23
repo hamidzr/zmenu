@@ -16,6 +16,9 @@ pub const AppState = struct {
     ipc_path: ?[]const u8,
     allocator: std.mem.Allocator,
     update_queue: ?*updates.UpdateQueue,
+    stream_closed: bool,
+    last_keystroke_ms: i64,
+    pending_stream_close_auto_accept: bool,
     had_focus: bool,
 };
 

@@ -3,12 +3,11 @@ const appconfig = @import("config.zig");
 const args = @import("cli/args.zig");
 const config_file = @import("cli/config_file.zig");
 const env = @import("cli/env.zig");
+const io_compat = @import("io_compat.zig");
 
-pub fn parse(allocator: std.mem.Allocator) !appconfig.Config {
+pub fn parse(allocator: std.mem.Allocator, proc_args: std.process.Args) !appconfig.Config {
     var config = appconfig.defaults();
-
-    const argv = try std.process.argsAlloc(allocator);
-    defer std.process.argsFree(allocator, argv);
+    const argv = try proc_args.toSlice(allocator);
 
     if (args.hasFlag(argv, "--help") or args.hasFlag(argv, "-h")) {
         printHelp();
@@ -20,7 +19,7 @@ pub fn parse(allocator: std.mem.Allocator) !appconfig.Config {
 
     if (args.hasFlag(argv, "--init-config")) {
         const path = try config_file.writeDefaultConfig(allocator, config_menu_id);
-        std.fs.File.stdout().deprecatedWriter().print("zmenu: wrote config to {s}\n", .{path}) catch {};
+        io_compat.stdoutPrint("zmenu: wrote config to {s}\n", .{path}) catch {};
         std.process.exit(0);
     }
 
@@ -32,7 +31,7 @@ pub fn parse(allocator: std.mem.Allocator) !appconfig.Config {
 }
 
 fn printHelp() void {
-    std.fs.File.stdout().deprecatedWriter().print(
+    io_compat.stdoutPrint(
         \\zmenu (zig gmenu) usage:
         \\  zmenu [flags]
         \\
@@ -45,7 +44,7 @@ fn printHelp() void {
         \\  -s, --search-method <name>   direct|fuzzy|fuzzy1|fuzzy3|default
         \\  -o, --preserve-order         Preserve match order
         \\      --no-levenshtein-fallback Disable Levenshtein fallback
-        \\      --auto-accept            Auto accept when single match
+        \\      --auto-accept            Auto accept when final single match
         \\      --terminal               Terminal mode
         \\      --follow-stdin           Keep running and append stdin
         \\      --ipc-only               Ignore stdin and wait for IPC updates

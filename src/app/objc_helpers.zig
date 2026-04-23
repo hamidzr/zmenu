@@ -18,7 +18,7 @@ pub const NSRect = extern struct {
     size: NSSize,
 };
 
-pub fn nsString(str: [:0]const u8) objc.Object {
+pub fn nsString(str: [*:0]const u8) objc.Object {
     const NSString = objc.getClass("NSString").?;
     return NSString.msgSend(objc.Object, "stringWithUTF8String:", .{str});
 }
@@ -38,7 +38,7 @@ pub fn nsFont(size: f64) objc.Object {
     return NSFont.msgSend(objc.Object, "systemFontOfSize:", .{size});
 }
 
-pub fn applyPlaceholderColor(field: objc.Object, placeholder: [:0]const u8, color: objc.Object) void {
+pub fn applyPlaceholderColor(field: objc.Object, placeholder: [*:0]const u8, color: objc.Object) void {
     const NSDictionary = objc.getClass("NSDictionary").?;
     const NSAttributedString = objc.getClass("NSAttributedString").?;
     const key = nsString("NSColor");
@@ -76,7 +76,7 @@ pub fn columnIsIcon(column: objc.Object) bool {
 }
 
 pub fn iconImage(kind: menu.IconKind) ?objc.Object {
-    const name: [:0]const u8 = switch (kind) {
+    const name: [*:0]const u8 = switch (kind) {
         .app => "NSApplicationIcon",
         .file => "NSGenericDocument",
         .folder => "NSFolder",

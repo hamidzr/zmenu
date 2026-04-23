@@ -1,5 +1,6 @@
 const std = @import("std");
 const builtin = @import("builtin");
+const io_compat = @import("../io_compat.zig");
 
 pub fn defaultConfigPath(allocator: std.mem.Allocator, menu_id: [:0]const u8) ![]const u8 {
     const home = try homeDir(allocator);
@@ -55,25 +56,26 @@ pub fn findConfigPath(allocator: std.mem.Allocator, menu_id: [:0]const u8) !?[]c
 }
 
 pub fn makePathAbsolute(path: []const u8) !void {
+    const io = io_compat.globalIo();
     if (!std.fs.path.isAbsolute(path)) {
-        return std.fs.cwd().makePath(path);
+        return std.Io.Dir.createDirPath(std.Io.Dir.cwd(), io, path);
     }
-    var root = try std.fs.openDirAbsolute("/", .{});
-    defer root.close();
-    const trimmed = std.mem.trimLeft(u8, path, "/");
+    var root = try std.Io.Dir.openDirAbsolute(io, "/", .{});
+    defer root.close(io);
+    const trimmed = std.mem.trimStart(u8, path, "/");
     if (trimmed.len == 0) return;
-    try root.makePath(trimmed);
+    try root.createDirPath(io, trimmed);
 }
 
 fn homeDir(allocator: std.mem.Allocator) !?[]const u8 {
-    return std.process.getEnvVarOwned(allocator, "HOME") catch |err| switch (err) {
+    return io_compat.getEnvVarOwned(allocator, "HOME") catch |err| switch (err) {
         error.EnvironmentVariableNotFound => null,
         else => return err,
     };
 }
 
 fn userConfigDir(allocator: std.mem.Allocator, home: ?[]const u8) !?[]const u8 {
-    if (std.process.getEnvVarOwned(allocator, "XDG_CONFIG_HOME")) |dir| {
+    if (io_compat.getEnvVarOwned(allocator, "XDG_CONFIG_HOME")) |dir| {
         return @as(?[]const u8, dir);
     } else |err| {
         if (err != error.EnvironmentVariableNotFound) return err;
@@ -88,7 +90,7 @@ fn userConfigDir(allocator: std.mem.Allocator, home: ?[]const u8) !?[]const u8 {
 }
 
 fn pathExists(path: []const u8) bool {
-    if (std.fs.accessAbsolute(path, .{})) |_| {
+    if (io_compat.accessAbsolute(path, .{})) |_| {
         return true;
     } else |err| switch (err) {
         error.FileNotFound => return false,

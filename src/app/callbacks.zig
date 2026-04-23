@@ -2,6 +2,7 @@ const std = @import("std");
 const objc = @import("objc");
 const menu = @import("../menu.zig");
 const exit_codes = @import("../exit_codes.zig");
+const time_compat = @import("../time_compat.zig");
 const objc_helpers = @import("objc_helpers.zig");
 const updates = @import("updates.zig");
 const logic = @import("logic.zig");
@@ -29,12 +30,12 @@ pub fn controlTextDidChange(target: objc.c.id, sel: objc.c.SEL, notification: ob
     const text = field.msgSend(objc.Object, "stringValue", .{});
     const utf8_ptr = text.msgSend(?[*:0]const u8, "UTF8String", .{});
     if (utf8_ptr == null) {
-        logic.applyFilter(app_state, "");
+        applyUserQuery(app_state, "");
         return;
     }
 
     const query: []const u8 = std.mem.sliceTo(utf8_ptr.?, 0);
-    logic.applyFilter(app_state, query);
+    applyUserQuery(app_state, query);
 }
 
 pub fn controlTextViewDoCommandBySelector(
@@ -206,10 +207,20 @@ pub fn onUpdateTimer(target: objc.c.id, sel: objc.c.SEL, timer: objc.c.id) callc
     const app_state = state.g_state orelse return;
     const queue = app_state.update_queue orelse return;
     const updates_slice = queue.drain();
-    if (updates_slice.len == 0) return;
+    if (updates_slice.len == 0) {
+        if (app_state.pending_stream_close_auto_accept) {
+            logic.maybeAutoAccept(app_state, .stream_close);
+        }
+        return;
+    }
 
+    var saw_stream_closed = false;
     var latest_set_batch: ?u64 = null;
     for (updates_slice) |update| {
+        if (update.kind == .stream_closed) {
+            saw_stream_closed = true;
+            continue;
+        }
         if (update.kind != .set) continue;
         if (latest_set_batch == null or update.batch > latest_set_batch.?) {
             latest_set_batch = update.batch;
@@ -224,40 +235,51 @@ pub fn onUpdateTimer(target: objc.c.id, sel: objc.c.SEL, timer: objc.c.id) callc
     defer append_items.deinit(app_state.allocator);
 
     for (updates_slice) |update| {
+        if (update.kind == .stream_closed) continue;
         if (update.kind == .set and latest_set_batch != null and update.batch != latest_set_batch.?) {
-            queue.allocator.free(update.line);
+            if (update.line) |line| {
+                queue.allocator.free(line);
+            }
             continue;
         }
+        const line = update.line orelse continue;
         const item = switch (update.source) {
-            .stdin => menu.parseItem(app_state.allocator, update.line, 0, app_state.config.show_icons) catch {
-                queue.allocator.free(update.line);
+            .stdin => menu.parseItem(app_state.allocator, line, 0, app_state.config.show_icons) catch {
+                queue.allocator.free(line);
                 continue;
             },
-            .ipc => updates.menuItemFromIpc(app_state.allocator, update.line) orelse {
-                queue.allocator.free(update.line);
+            .ipc => updates.menuItemFromIpc(app_state.allocator, line) orelse {
+                queue.allocator.free(line);
                 continue;
             },
         };
-        queue.allocator.free(update.line);
+        queue.allocator.free(line);
         switch (update.kind) {
             .set => set_items.append(app_state.allocator, item) catch {},
             .prepend => prepend_items.append(app_state.allocator, item) catch {},
             .append => append_items.append(app_state.allocator, item) catch {},
+            .stream_closed => unreachable,
         }
     }
     queue.allocator.free(updates_slice);
 
-    if (set_items.items.len == 0 and prepend_items.items.len == 0 and append_items.items.len == 0) return;
-    if (set_items.items.len > 0) {
+    const has_item_updates = set_items.items.len > 0 or prepend_items.items.len > 0 or append_items.items.len > 0;
+    if (has_item_updates and set_items.items.len > 0) {
         app_state.model.setItems(app_state.allocator, set_items.items) catch return;
     }
-    if (prepend_items.items.len > 0) {
+    if (has_item_updates and prepend_items.items.len > 0) {
         app_state.model.prependItems(app_state.allocator, prepend_items.items) catch return;
     }
-    if (append_items.items.len > 0) {
+    if (has_item_updates and append_items.items.len > 0) {
         app_state.model.appendItems(app_state.allocator, append_items.items) catch return;
     }
-    logic.applyFilter(app_state, logic.currentQuery(app_state));
+    if (has_item_updates) {
+        logic.applyFilter(app_state, logic.currentQuery(app_state));
+    }
+    if (saw_stream_closed) {
+        app_state.stream_closed = true;
+        logic.maybeAutoAccept(app_state, .stream_close);
+    }
 }
 
 fn scheduleFocusLossCancel() void {
@@ -301,7 +323,7 @@ pub fn keyDown(target: objc.c.id, sel: objc.c.SEL, event: objc.c.id) callconv(.c
 
             if ((ec.modifiers & NSEventModifierFlagControl) != 0 and (ec.char == 'l' or ec.char == 'L')) {
                 app_state.text_field.msgSend(void, "setStringValue:", .{nsString("")});
-                logic.applyFilter(app_state, "");
+                applyUserQuery(app_state, "");
                 return;
             }
         }
@@ -371,6 +393,12 @@ fn handleNumericShortcutWithQuery(app_state: *state.AppState, ch: u8, query_for_
         logic.acceptSelection(app_state);
     }
     return true;
+}
+
+fn applyUserQuery(app_state: *state.AppState, query: []const u8) void {
+    app_state.last_keystroke_ms = time_compat.milliTimestamp();
+    logic.applyFilter(app_state, query);
+    logic.maybeAutoAccept(app_state, .keystroke);
 }
 
 pub fn becomeFirstResponder(target: objc.c.id, sel: objc.c.SEL) callconv(.c) bool {

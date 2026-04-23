@@ -1,5 +1,6 @@
 const std = @import("std");
 const builtin = @import("builtin");
+const io_compat = @import("io_compat.zig");
 
 pub const State = struct {
     last_query: []const u8,
@@ -9,13 +10,13 @@ pub const State = struct {
 
 pub fn load(allocator: std.mem.Allocator, menu_id: []const u8) !?State {
     const path = try cacheFilePath(allocator, menu_id);
-    var file = std.fs.openFileAbsolute(path, .{}) catch |err| switch (err) {
+    const file = io_compat.openFileAbsolute(path, .{}) catch |err| switch (err) {
         error.FileNotFound => return null,
         else => return err,
     };
-    defer file.close();
+    defer io_compat.closeFile(file);
 
-    const contents = try file.readToEndAlloc(allocator, 64 * 1024);
+    const contents = try io_compat.readAllFile(allocator, file, 64 * 1024);
     var last_query: []const u8 = "";
     var last_selection: []const u8 = "";
     var last_selection_time: i64 = 0;
@@ -58,10 +59,11 @@ pub fn save(allocator: std.mem.Allocator, menu_id: []const u8, state: State) !vo
     try std.fs.cwd().makePath(dir);
     const path = try cacheFilePath(allocator, menu_id);
 
-    var file = try std.fs.createFileAbsolute(path, .{ .truncate = true });
-    defer file.close();
+    const file = try io_compat.createFileAbsolute(path, .{ .truncate = true });
+    defer io_compat.closeFile(file);
 
-    try file.deprecatedWriter().print(
+    try io_compat.filePrint(
+        file,
         "last_query: {s}\nlast_selection: {s}\nlast_selection_time: {d}\n",
         .{ state.last_query, state.last_selection, state.last_selection_time },
     );
@@ -80,11 +82,11 @@ fn cacheDir(allocator: std.mem.Allocator, menu_id: []const u8) ![]const u8 {
 }
 
 fn cacheRoot(allocator: std.mem.Allocator) ![]const u8 {
-    if (std.process.getEnvVarOwned(allocator, "XDG_CACHE_HOME")) |dir| return dir else |err| {
+    if (io_compat.getEnvVarOwned(allocator, "XDG_CACHE_HOME")) |dir| return dir else |err| {
         if (err != error.EnvironmentVariableNotFound) return err;
     }
 
-    const home = try std.process.getEnvVarOwned(allocator, "HOME");
+    const home = try io_compat.getEnvVarOwned(allocator, "HOME");
     if (builtin.os.tag == .macos) {
         return std.fs.path.join(allocator, &.{ home, "Library", "Caches" });
     }

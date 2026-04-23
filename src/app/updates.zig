@@ -1,6 +1,7 @@
 const std = @import("std");
 const appconfig = @import("../config.zig");
 const ipc = @import("../ipc.zig");
+const io_compat = @import("../io_compat.zig");
 const menu = @import("../menu.zig");
 
 const ipc_max_payload: usize = 1024 * 1024;
@@ -9,6 +10,7 @@ pub const UpdateKind = enum {
     append,
     prepend,
     set,
+    stream_closed,
 };
 
 pub const UpdateSource = enum {
@@ -19,13 +21,13 @@ pub const UpdateSource = enum {
 pub const ItemUpdate = struct {
     kind: UpdateKind,
     source: UpdateSource,
-    line: []const u8,
+    line: ?[]const u8,
     batch: u64,
 };
 
 pub const UpdateQueue = struct {
     allocator: std.mem.Allocator,
-    mutex: std.Thread.Mutex = .{},
+    mutex: std.Io.Mutex = .{},
     items: std.ArrayList(ItemUpdate),
     next_batch: u64,
 
@@ -38,38 +40,54 @@ pub const UpdateQueue = struct {
     }
 
     pub fn pushOwned(self: *UpdateQueue, kind: UpdateKind, source: UpdateSource, line: []const u8, batch: u64) void {
-        self.mutex.lock();
-        defer self.mutex.unlock();
-        self.items.append(self.allocator, .{ .kind = kind, .source = source, .line = line, .batch = batch }) catch self.allocator.free(line);
+        self.push(kind, source, line, batch);
+    }
+
+    pub fn pushSignal(self: *UpdateQueue, kind: UpdateKind, source: UpdateSource, batch: u64) void {
+        self.push(kind, source, null, batch);
+    }
+
+    fn push(self: *UpdateQueue, kind: UpdateKind, source: UpdateSource, line: ?[]const u8, batch: u64) void {
+        self.mutex.lockUncancelable(io_compat.globalIo());
+        defer self.mutex.unlock(io_compat.globalIo());
+        self.items.append(self.allocator, .{ .kind = kind, .source = source, .line = line, .batch = batch }) catch {
+            if (line) |owned_line| {
+                self.allocator.free(owned_line);
+            }
+        };
     }
 
     pub fn nextBatchId(self: *UpdateQueue) u64 {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(io_compat.globalIo());
+        defer self.mutex.unlock(io_compat.globalIo());
         const batch = self.next_batch;
         self.next_batch += 1;
         return batch;
     }
 
     pub fn reset(self: *UpdateQueue) void {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(io_compat.globalIo());
+        defer self.mutex.unlock(io_compat.globalIo());
         for (self.items.items) |update| {
-            self.allocator.free(update.line);
+            if (update.line) |line| {
+                self.allocator.free(line);
+            }
         }
         self.items.clearRetainingCapacity();
         self.next_batch = 1;
     }
 
     pub fn drain(self: *UpdateQueue) []const ItemUpdate {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(io_compat.globalIo());
+        defer self.mutex.unlock(io_compat.globalIo());
         if (self.items.items.len == 0) {
             return &[_]ItemUpdate{};
         }
         const out = self.allocator.alloc(ItemUpdate, self.items.items.len) catch {
             for (self.items.items) |update| {
-                self.allocator.free(update.line);
+                if (update.line) |line| {
+                    self.allocator.free(line);
+                }
             }
             self.items.clearRetainingCapacity();
             return &[_]ItemUpdate{};
@@ -90,7 +108,7 @@ pub const QueueState = struct {
             std.heap.c_allocator.destroy(queue);
         }
         if (self.ipc_path) |path| {
-            std.fs.deleteFileAbsolute(path) catch {};
+            io_compat.deleteFileAbsolute(path) catch {};
         }
     }
 };
@@ -112,26 +130,39 @@ pub fn startUpdateQueue(config: appconfig.Config) !QueueState {
 }
 
 pub fn followStdinThread(queue: *UpdateQueue) void {
-    var reader = std.fs.File.stdin().deprecatedReader();
+    var pending = std.ArrayList(u8).empty;
+    defer pending.deinit(queue.allocator);
+
+    var buf: [4096]u8 = undefined;
     while (true) {
-        const line_opt = reader.readUntilDelimiterOrEofAlloc(queue.allocator, '\n', 64 * 1024) catch return;
-        if (line_opt == null) return;
-        var line = line_opt.?;
-        const trimmed = std.mem.trimRight(u8, line, "\r\n");
-        if (trimmed.len == 0) {
-            queue.allocator.free(line);
-            continue;
-        }
-        if (trimmed.len != line.len) {
-            const copy = queue.allocator.dupe(u8, trimmed) catch {
-                queue.allocator.free(line);
+        const n = std.posix.read(std.posix.STDIN_FILENO, &buf) catch return;
+        if (n == 0) break;
+        for (buf[0..n]) |byte| {
+            if (byte == '\n') {
+                flushPendingStdinLine(queue, &pending);
                 continue;
-            };
-            queue.allocator.free(line);
-            line = copy;
+            }
+            if (pending.items.len >= 64 * 1024) return;
+            pending.append(queue.allocator, byte) catch return;
         }
-        queue.pushOwned(.append, .stdin, line, 0);
     }
+    flushPendingStdinLine(queue, &pending);
+    queue.pushSignal(.stream_closed, .stdin, 0);
+}
+
+fn flushPendingStdinLine(queue: *UpdateQueue, pending: *std.ArrayList(u8)) void {
+    const trimmed = std.mem.trimRight(u8, pending.items, "\r");
+    if (trimmed.len == 0) {
+        pending.clearRetainingCapacity();
+        return;
+    }
+
+    const line = queue.allocator.dupe(u8, trimmed) catch {
+        pending.clearRetainingCapacity();
+        return;
+    };
+    pending.clearRetainingCapacity();
+    queue.pushOwned(.append, .stdin, line, 0);
 }
 
 pub fn menuItemFromIpc(allocator: std.mem.Allocator, payload: []const u8) ?menu.MenuItem {
@@ -172,7 +203,7 @@ fn startIpcServer(queue: *UpdateQueue, menu_id: []const u8) ?[]const u8 {
 }
 
 fn openIpcServer(path: []const u8) !std.net.Server {
-    std.fs.deleteFileAbsolute(path) catch |err| switch (err) {
+    io_compat.deleteFileAbsolute(path) catch |err| switch (err) {
         error.FileNotFound => {},
         else => return err,
     };

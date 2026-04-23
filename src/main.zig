@@ -1,15 +1,13 @@
 const std = @import("std");
 const app = @import("app.zig");
 const cli = @import("cli.zig");
+const io_compat = @import("io_compat.zig");
 const terminal = @import("terminal.zig");
 
-pub fn main() !void {
-    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
-    defer arena.deinit();
-    const allocator = arena.allocator();
-
-    const config = cli.parse(allocator) catch |err| {
-        std.fs.File.stderr().deprecatedWriter().print("zmenu: {s}\n", .{@errorName(err)}) catch {};
+pub fn main(init: std.process.Init) !void {
+    const allocator = init.arena.allocator();
+    const config = cli.parse(allocator, init.minimal.args) catch |err| {
+        io_compat.stderrPrint("zmenu: {s}\n", .{@errorName(err)}) catch {};
         std.process.exit(1);
     };
 

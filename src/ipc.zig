@@ -1,4 +1,5 @@
 const std = @import("std");
+const io_compat = @import("io_compat.zig");
 
 pub const Item = struct {
     id: []const u8 = "",
@@ -25,8 +26,15 @@ pub fn socketName(allocator: std.mem.Allocator, menu_id: []const u8) ![]const u8
     return allocator.dupe(u8, "zmenu.sock");
 }
 
-pub fn tempDir(_: std.mem.Allocator) ![]const u8 {
-    const env = std.posix.getenv("TMPDIR") orelse std.posix.getenv("TMP") orelse std.posix.getenv("TEMP");
-    if (env) |value| return value[0..value.len];
+pub fn tempDir(allocator: std.mem.Allocator) ![]const u8 {
+    if (io_compat.getEnvVarOwned(allocator, "TMPDIR")) |value| return value else |err| {
+        if (err != error.EnvironmentVariableNotFound) return err;
+    }
+    if (io_compat.getEnvVarOwned(allocator, "TMP")) |value| return value else |err| {
+        if (err != error.EnvironmentVariableNotFound) return err;
+    }
+    if (io_compat.getEnvVarOwned(allocator, "TEMP")) |value| return value else |err| {
+        if (err != error.EnvironmentVariableNotFound) return err;
+    }
     return "/tmp";
 }

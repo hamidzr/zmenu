@@ -1,5 +1,6 @@
 const std = @import("std");
 const appconfig = @import("../config.zig");
+const io_compat = @import("../io_compat.zig");
 const parse = @import("parse.zig");
 const paths = @import("paths.zig");
 
@@ -47,13 +48,13 @@ pub fn loadConfigFile(allocator: std.mem.Allocator, menu_id: [:0]const u8, confi
     const path = try paths.findConfigPath(allocator, menu_id);
     if (path == null) return;
 
-    var file = std.fs.openFileAbsolute(path.?, .{}) catch |err| switch (err) {
+    const file = io_compat.openFileAbsolute(path.?, .{}) catch |err| switch (err) {
         error.FileNotFound => return,
         else => return err,
     };
-    defer file.close();
+    defer io_compat.closeFile(file);
 
-    const contents = try file.readToEndAlloc(allocator, 64 * 1024);
+    const contents = try io_compat.readAllFile(allocator, file, 64 * 1024);
     defer allocator.free(contents);
     var seen_keys: [config_key_variants.len]?[]const u8 = [_]?[]const u8{null} ** config_key_variants.len;
     var iter = std.mem.splitScalar(u8, contents, '\n');
@@ -88,10 +89,11 @@ pub fn writeDefaultConfig(allocator: std.mem.Allocator, menu_id: [:0]const u8) !
     try paths.makePathAbsolute(dir);
 
     const defaults = appconfig.defaults();
-    var file = try std.fs.createFileAbsolute(path, .{ .exclusive = true });
-    defer file.close();
+    const file = try io_compat.createFileAbsolute(path, .{ .exclusive = true });
+    defer io_compat.closeFile(file);
 
-    try file.deprecatedWriter().print(
+    try io_compat.filePrint(
+        file,
         \\# gmenu config
         \\title: {s}
         \\prompt: {s}

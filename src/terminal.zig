@@ -3,27 +3,28 @@ const appconfig = @import("config.zig");
 const pid = @import("pid.zig");
 const menu = @import("menu.zig");
 const exit_codes = @import("exit_codes.zig");
+const io_compat = @import("io_compat.zig");
 
 pub fn run(config: appconfig.Config, allocator: std.mem.Allocator) !void {
     const items = menu.readItems(allocator, false) catch {
-        std.fs.File.stderr().deprecatedWriter().print("zmenu: stdin is empty\n", .{}) catch {};
+        io_compat.stderrPrint("zmenu: stdin is empty\n", .{}) catch {};
         std.process.exit(exit_codes.unknown_error);
     };
 
     const pid_path = pid.create(allocator, config.menu_id) catch {
-        std.fs.File.stderr().deprecatedWriter().print("zmenu: another instance is running\n", .{}) catch {};
+        io_compat.stderrPrint("zmenu: another instance is running\n", .{}) catch {};
         std.process.exit(exit_codes.unknown_error);
     };
     defer pid.remove(pid_path);
 
-    var tty = std.fs.openFileAbsolute("/dev/tty", .{ .mode = .read_write }) catch {
-        std.fs.File.stderr().deprecatedWriter().print("zmenu: unable to open tty\n", .{}) catch {};
+    var tty = io_compat.openFileAbsolute("/dev/tty", .{ .mode = .read_write }) catch {
+        io_compat.stderrPrint("zmenu: unable to open tty\n", .{}) catch {};
         std.process.exit(exit_codes.unknown_error);
     };
-    defer tty.close();
+    defer io_compat.closeFile(tty);
 
     const original_term = enableRawMode(tty.handle) catch {
-        std.fs.File.stderr().deprecatedWriter().print("zmenu: unable to enter raw mode\n", .{}) catch {};
+        io_compat.stderrPrint("zmenu: unable to enter raw mode\n", .{}) catch {};
         std.process.exit(exit_codes.unknown_error);
     };
     defer std.posix.tcsetattr(tty.handle, .NOW, original_term) catch {};
@@ -36,12 +37,11 @@ pub fn run(config: appconfig.Config, allocator: std.mem.Allocator) !void {
 
     try renderMatches(&tty, config.placeholder, input.items, items, config.numeric_selection_mode);
 
-    var reader = tty.deprecatedReader();
     var final_query: []const u8 = input.items;
     var exit_code: ?u8 = null;
 
     while (true) {
-        const ch = reader.readByte() catch {
+        const ch = io_compat.readByte(tty.handle) catch {
             exit_code = exit_codes.unknown_error;
             break;
         };
@@ -58,7 +58,7 @@ pub fn run(config: appconfig.Config, allocator: std.mem.Allocator) !void {
                 }
             },
             3 => {
-                tty.deprecatedWriter().print("\r\n{s}Input cancelled\r\n", .{config.placeholder}) catch {};
+                io_compat.filePrint(tty, "\r\n{s}Input cancelled\r\n", .{config.placeholder}) catch {};
                 exit_code = exit_codes.user_canceled;
                 break;
             },
@@ -88,15 +88,15 @@ pub fn run(config: appconfig.Config, allocator: std.mem.Allocator) !void {
     }
 
     if (match_count == 0) {
-        std.fs.File.stderr().deprecatedWriter().print("No matches found\n", .{}) catch {};
+        io_compat.stderrPrint("No matches found\n", .{}) catch {};
         return;
     }
     if (match_count > 1) {
-        std.fs.File.stderr().deprecatedWriter().print("Multiple matches found. Picking the first one.\n", .{}) catch {};
+        io_compat.stderrPrint("Multiple matches found. Picking the first one.\n", .{}) catch {};
     }
 
-    std.fs.File.stdout().deprecatedWriter().print("\x1b[2J\x1b[H", .{}) catch {};
-    std.fs.File.stdout().deprecatedWriter().print("{s}", .{first_match.?}) catch {};
+    io_compat.stdoutPrint("\x1b[2J\x1b[H", .{}) catch {};
+    io_compat.stdoutPrint("{s}", .{first_match.?}) catch {};
 }
 
 fn enableRawMode(fd: std.posix.fd_t) !std.posix.termios {
@@ -131,16 +131,15 @@ fn enableRawMode(fd: std.posix.fd_t) !std.posix.termios {
 }
 
 fn renderMatches(
-    tty: *std.fs.File,
+    tty: *std.Io.File,
     prompt: [:0]const u8,
     query: []const u8,
     items: []menu.MenuItem,
     numeric_selection_mode: appconfig.NumericSelectionMode,
 ) !void {
-    var writer = tty.deprecatedWriter();
-    try writer.print("\x1b[2J\x1b[H", .{});
-    try writer.print("{s}: {s}\r\n", .{ prompt, query });
-    try writer.print("--------------------------------\r\n", .{});
+    try io_compat.filePrint(tty, "\x1b[2J\x1b[H", .{});
+    try io_compat.filePrint(tty, "{s}: {s}\r\n", .{ prompt, query });
+    try io_compat.filePrint(tty, "--------------------------------\r\n", .{});
 
     var total_matches: usize = 0;
     for (items) |item| {
@@ -155,17 +154,17 @@ fn renderMatches(
         if (containsInsensitive(item.label, query)) {
             match_index += 1;
             if (numeric_enabled and match_index <= appconfig.numeric_shortcut_max) {
-                try writer.print("{d}. {s}\r\n", .{ match_index, item.label });
+                try io_compat.filePrint(tty, "{d}. {s}\r\n", .{ match_index, item.label });
             } else {
-                try writer.print("{s}\r\n", .{item.label});
+                try io_compat.filePrint(tty, "{s}\r\n", .{item.label});
             }
         }
     }
 
     if (match_index == 0) {
-        try writer.print("(no matches)\r\n", .{});
+        try io_compat.filePrint(tty, "(no matches)\r\n", .{});
     }
-    try writer.print("--------------------------------\r\n", .{});
+    try io_compat.filePrint(tty, "--------------------------------\r\n", .{});
 }
 
 fn containsInsensitive(haystack: []const u8, needle: []const u8) bool {

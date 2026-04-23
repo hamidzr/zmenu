@@ -1,14 +1,11 @@
 const std = @import("std");
+const io_compat = @import("io_compat.zig");
 const ipc = @import("ipc.zig");
 const menu = @import("menu.zig");
 
-pub fn main() !void {
-    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
-    defer arena.deinit();
-    const allocator = arena.allocator();
-
-    const args = try std.process.argsAlloc(allocator);
-    defer std.process.argsFree(allocator, args);
+pub fn main(init: std.process.Init) !void {
+    const allocator = init.arena.allocator();
+    const args = try init.minimal.args.toSlice(allocator);
 
     var menu_id: []const u8 = "";
     var socket_override: ?[]const u8 = null;
@@ -67,7 +64,7 @@ pub fn main() !void {
     }
 
     if (items.items.len == 0) {
-        std.fs.File.stderr().deprecatedWriter().print("zmenuctl: no items provided\n", .{}) catch {};
+        io_compat.stderrPrint("zmenuctl: no items provided\n", .{}) catch {};
         std.process.exit(1);
     }
 
@@ -82,11 +79,12 @@ pub fn main() !void {
     const payload = json_out.written();
 
     const socket_path = socket_override orelse try ipc.socketPath(allocator, menu_id);
-    const stream = try std.net.connectUnixSocket(socket_path);
-    defer stream.close();
+    const address = try std.Io.net.UnixAddress.init(socket_path);
+    const stream = try address.connect(io_compat.globalIo());
+    defer stream.close(io_compat.globalIo());
 
     var buf: [4096]u8 = undefined;
-    var writer = stream.writer(&buf);
+    var writer = stream.writer(io_compat.globalIo(), &buf);
     const header = try std.fmt.allocPrint(allocator, "{d}\n", .{payload.len});
     defer allocator.free(header);
     try writer.interface.writeAll(header);
@@ -109,7 +107,7 @@ fn readItemsFromStdin(allocator: std.mem.Allocator, items: *std.ArrayList(ipc.It
 }
 
 fn usage() void {
-    std.fs.File.stdout().deprecatedWriter().print(
+    io_compat.stdoutPrint(
         \\zmenuctl usage:
         \\  zmenuctl [--menu-id <id>] [--socket <path>] [--stdin] <set|append|prepend> [items...]
         \\
