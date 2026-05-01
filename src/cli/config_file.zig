@@ -21,6 +21,7 @@ const config_key_variants = [_]ConfigKeyVariant{
     .{ .canonical = "terminal_mode", .camel = "terminalMode" },
     .{ .canonical = "follow_stdin", .camel = "followStdin" },
     .{ .canonical = "ipc_only", .camel = "ipcOnly" },
+    .{ .canonical = "unique", .camel = "" },
     .{ .canonical = "numeric_selection_mode", .camel = "numericSelectionMode" },
     .{ .canonical = "no_numeric_selection", .camel = "noNumericSelection" },
     .{ .canonical = "show_icons", .camel = "showIcons" },
@@ -105,6 +106,7 @@ pub fn writeDefaultConfig(allocator: std.mem.Allocator, menu_id: [:0]const u8) !
         \\terminal_mode: false
         \\follow_stdin: false
         \\ipc_only: false
+        \\unique: false
         \\auto_accept: false
         \\accept_custom_selection: true
         \\numeric_selection_mode: auto
@@ -185,6 +187,10 @@ fn applyConfigKV(allocator: std.mem.Allocator, config: *appconfig.Config, key: [
     }
     if (eqKey(key, "ipc_only") or eqKey(key, "ipcOnly")) {
         config.ipc_only = try parse.parseBool(value);
+        return;
+    }
+    if (eqKey(key, "unique")) {
+        config.unique = try parse.parseBool(value);
         return;
     }
     if (eqKey(key, "preserve_order") or eqKey(key, "preserveOrder")) {

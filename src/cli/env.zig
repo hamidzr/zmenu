@@ -40,6 +40,11 @@ pub fn applyEnv(allocator: std.mem.Allocator, config: *appconfig.Config) !void {
     } else |err| {
         if (err != error.EnvironmentVariableNotFound) return err;
     }
+    if (envValue(allocator, "GMENU_UNIQUE")) |value| {
+        config.unique = try parse.parseBool(value);
+    } else |err| {
+        if (err != error.EnvironmentVariableNotFound) return err;
+    }
 
     if (envValue(allocator, "GMENU_MIN_WIDTH")) |value| {
         config.window_width = try std.fmt.parseFloat(f64, value);

@@ -48,6 +48,8 @@ fn printHelp() void {
         \\      --terminal               Terminal mode
         \\      --follow-stdin           Keep running and append stdin
         \\      --ipc-only               Ignore stdin and wait for IPC updates
+        \\  -u, --unique                 Drop duplicate rows by label
+        \\      --no-unique              Allow duplicates (default)
         \\      --numeric-selection-mode <mode> off|on|auto
         \\      --no-numeric-selection   Disable numeric shortcuts
         \\      --show-icons             Show icon hint column

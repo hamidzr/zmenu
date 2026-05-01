@@ -56,6 +56,19 @@ pub fn applyArgs(allocator: std.mem.Allocator, args: []const [:0]const u8, confi
             config.ipc_only = true;
             continue;
         }
+        if (std.mem.eql(u8, arg, "--unique") or std.mem.eql(u8, arg, "-u")) {
+            config.unique = true;
+            continue;
+        }
+        if (std.mem.eql(u8, arg, "--no-unique")) {
+            config.unique = false;
+            continue;
+        }
+        if (std.mem.startsWith(u8, arg, "--unique=")) {
+            const value = arg["--unique=".len..];
+            config.unique = try parse.parseBool(value);
+            continue;
+        }
         if (std.mem.eql(u8, arg, "--preserve-order") or std.mem.eql(u8, arg, "-o")) {
             config.search.preserve_order = true;
             continue;

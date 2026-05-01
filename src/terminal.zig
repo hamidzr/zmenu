@@ -6,7 +6,7 @@ const exit_codes = @import("exit_codes.zig");
 const io_compat = @import("io_compat.zig");
 
 pub fn run(config: appconfig.Config, allocator: std.mem.Allocator) !void {
-    const items = menu.readItems(allocator, false) catch {
+    const items = menu.readItems(allocator, false, config.unique) catch {
         io_compat.stderrPrint("zmenu: stdin is empty\n", .{}) catch {};
         std.process.exit(exit_codes.unknown_error);
     };

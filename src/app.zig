@@ -35,7 +35,7 @@ pub fn run(config: appconfig.Config) !void {
 
     var items: []menu.MenuItem = &[_]menu.MenuItem{};
     if (!config.ipc_only and !config.follow_stdin) {
-        items = logic.readItems(allocator, config.show_icons) catch {
+        items = logic.readItems(allocator, config.show_icons, config.unique) catch {
             io_compat.stderrPrint("zmenu: stdin is empty\n", .{}) catch {};
             std.process.exit(exit_codes.unknown_error);
         };
@@ -287,7 +287,7 @@ pub fn run(config: appconfig.Config) !void {
     defer queue.deinit();
 
     var app_state = state.AppState{
-        .model = try menu.Model.init(allocator, items),
+        .model = try menu.Model.init(allocator, items, config.unique),
         .table_view = table_view,
         .index_column = index_column,
         .text_field = text_field,
