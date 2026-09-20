@@ -243,6 +243,10 @@ pub fn applyArgs(allocator: std.mem.Allocator, args: []const [:0]const u8, confi
             config.selection_color = try parse.parseColorOptional(args[i]);
             continue;
         }
+        if (std.mem.eql(u8, arg, "--render-bench")) {
+            config.render_bench = true;
+            continue;
+        }
     }
 }
 

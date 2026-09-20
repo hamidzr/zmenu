@@ -317,11 +317,16 @@ pub fn run(config: appconfig.Config) !void {
 
     var app_state = state.AppState{
         .model = try menu.Model.init(allocator, items, config.unique),
+        .window = window,
+        .content_view = content_view,
         .table_view = table_view,
         .index_column = index_column,
         .text_field = text_field,
         .match_label = match_label,
         .handler = handler,
+        .row_font = table_font,
+        .item_text_color = text_color,
+        .index_text_color = secondary_text_color,
         .config = config,
         .pid_path = pid_path,
         .allocator = allocator,
@@ -355,14 +360,27 @@ pub fn run(config: appconfig.Config) !void {
     table_view.msgSend(void, "setDataSource:", .{data_source});
     table_view.msgSend(void, "setDelegate:", .{data_source});
 
-    if (initial_query.len > 0) {
+    if (config.render_bench) {
+        logic.applyFilter(&app_state, "");
+    } else if (initial_query.len > 0) {
         const initial_query_z = try allocator.dupeZ(u8, initial_query);
         text_field.msgSend(void, "setStringValue:", .{nsString(initial_query_z)});
         logic.applyFilter(&app_state, initial_query);
     } else {
         logic.applyFilter(&app_state, "");
     }
-    logic.maybeAutoAccept(&app_state, .initial);
+    if (config.render_bench) {
+        const NSTimer = objc.getClass("NSTimer").?;
+        _ = NSTimer.msgSend(objc.Object, "scheduledTimerWithTimeInterval:target:selector:userInfo:repeats:", .{
+            @as(f64, 0.4),
+            handler,
+            objc.sel("onRenderBench:"),
+            @as(objc.c.id, null),
+            false,
+        });
+    } else {
+        logic.maybeAutoAccept(&app_state, .initial);
+    }
 
     app.msgSend(void, "activateIgnoringOtherApps:", .{true});
     window.msgSend(void, "makeKeyAndOrderFront:", .{@as(objc.c.id, null)});

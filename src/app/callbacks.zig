@@ -2,6 +2,7 @@ const std = @import("std");
 const objc = @import("objc");
 const menu = @import("../menu.zig");
 const exit_codes = @import("../exit_codes.zig");
+const io_compat = @import("../io_compat.zig");
 const time_compat = @import("../time_compat.zig");
 const objc_helpers = @import("objc_helpers.zig");
 const updates = @import("updates.zig");
@@ -280,6 +281,69 @@ pub fn onUpdateTimer(target: objc.c.id, sel: objc.c.SEL, timer: objc.c.id) callc
         app_state.stream_closed = true;
         logic.maybeAutoAccept(app_state, .stream_close);
     }
+}
+
+const render_bench_warmup: usize = 5;
+const render_bench_iters: usize = 40;
+
+/// Dev-only: time reloadData + layout + paint for the current filtered rows.
+pub fn onRenderBench(target: objc.c.id, sel: objc.c.SEL, timer: objc.c.id) callconv(.c) void {
+    _ = target;
+    _ = sel;
+    _ = timer;
+
+    const app_state = state.g_state orelse return;
+    const rows = app_state.model.filtered.items.len;
+
+    var i: usize = 0;
+    while (i < render_bench_warmup) : (i += 1) {
+        benchReloadAndPaint(app_state);
+    }
+
+    var samples: [render_bench_iters]i128 = undefined;
+    i = 0;
+    while (i < render_bench_iters) : (i += 1) {
+        const start = time_compat.monotonicNs();
+        benchReloadAndPaint(app_state);
+        samples[i] = time_compat.monotonicNs() - start;
+    }
+
+    std.mem.sort(i128, &samples, {}, std.sort.asc(i128));
+
+    var total: i128 = 0;
+    for (samples) |sample| total += sample;
+    const mean = @as(f64, @floatFromInt(total)) / @as(f64, @floatFromInt(render_bench_iters));
+    const mean_ms = mean / 1_000_000.0;
+
+    io_compat.stderrPrint(
+        "render-bench items={d} rows={d} iters={d} min={d:.3}ms median={d:.3}ms mean={d:.3}ms max={d:.3}ms\n",
+        .{
+            app_state.model.items.len,
+            rows,
+            render_bench_iters,
+            nsToMs(samples[0]),
+            nsToMs(samples[render_bench_iters / 2]),
+            mean_ms,
+            nsToMs(samples[render_bench_iters - 1]),
+        },
+    ) catch {};
+
+    logic.quit(app_state, 0);
+}
+
+fn benchReloadAndPaint(app_state: *state.AppState) void {
+    app_state.table_view.msgSend(void, "reloadData", .{});
+    app_state.table_view.msgSend(void, "setNeedsDisplay:", .{true});
+    app_state.content_view.msgSend(void, "layoutSubtreeIfNeeded", .{});
+    app_state.content_view.msgSend(void, "displayIfNeeded", .{});
+    // layer-backed views defer drawing to the Core Animation commit; flush it
+    // synchronously so the measurement includes the real paint work
+    const CATransaction = objc.getClass("CATransaction").?;
+    CATransaction.msgSend(void, "flush", .{});
+}
+
+fn nsToMs(ns: i128) f64 {
+    return @as(f64, @floatFromInt(ns)) / 1_000_000.0;
 }
 
 fn scheduleFocusLossCancel() void {

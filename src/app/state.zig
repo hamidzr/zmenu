@@ -6,11 +6,16 @@ const updates = @import("updates.zig");
 
 pub const AppState = struct {
     model: menu.Model,
+    window: objc.Object,
+    content_view: objc.Object,
     table_view: objc.Object,
     index_column: ?objc.Object,
     text_field: objc.Object,
     match_label: objc.Object,
     handler: objc.Object,
+    row_font: objc.Object,
+    item_text_color: ?objc.Object,
+    index_text_color: ?objc.Object,
     config: appconfig.Config,
     pid_path: ?[]const u8,
     ipc_path: ?[]const u8,

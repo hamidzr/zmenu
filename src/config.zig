@@ -62,6 +62,7 @@ pub const Config = struct {
     selection_color: ?Color,
     corner_radius: f64,
     vibrancy: bool,
+    render_bench: bool,
 
     pub fn hasNumericSelectionColumn(self: Config) bool {
         return self.numeric_selection_mode != .off;
@@ -110,5 +111,6 @@ pub fn defaults() Config {
         .selection_color = .{ .r = 0.22, .g = 0.24, .b = 0.3, .a = 0.9 },
         .corner_radius = 10.0,
         .vibrancy = true,
+        .render_bench = false,
     };
 }

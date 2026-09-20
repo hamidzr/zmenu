@@ -38,6 +38,10 @@ visual:
 bench:
 	scripts/bench_spawn.sh
 
+# measure table reload + paint cost (COUNT=2000)
+render-bench:
+	scripts/render_bench.sh
+
 install: build
 	cp zig-out/bin/* ~/.local/bin/
 

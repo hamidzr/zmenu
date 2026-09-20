@@ -18,6 +18,9 @@ fn inputHandlerClass() objc.Class {
     if (!cls.addMethod("onUpdateTimer:", callbacks.onUpdateTimer)) {
         @panic("failed to add onUpdateTimer: method");
     }
+    if (!cls.addMethod("onRenderBench:", callbacks.onRenderBench)) {
+        @panic("failed to add onRenderBench: method");
+    }
     if (!cls.addMethod("onSubmit:", callbacks.onSubmit)) {
         @panic("failed to add onSubmit: method");
     }
