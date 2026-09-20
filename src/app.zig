@@ -11,6 +11,7 @@ const menu = @import("menu.zig");
 const pid = @import("pid.zig");
 const exit_codes = @import("exit_codes.zig");
 const io_compat = @import("io_compat.zig");
+const time_compat = @import("time_compat.zig");
 
 const NSPoint = objc_helpers.NSPoint;
 const NSSize = objc_helpers.NSSize;
@@ -372,7 +373,7 @@ pub fn run(config: appconfig.Config) !void {
     if (config.render_bench) {
         const NSTimer = objc.getClass("NSTimer").?;
         _ = NSTimer.msgSend(objc.Object, "scheduledTimerWithTimeInterval:target:selector:userInfo:repeats:", .{
-            @as(f64, 0.4),
+            @as(f64, 0.2),
             handler,
             objc.sel("onRenderBench:"),
             @as(objc.c.id, null),
@@ -384,6 +385,9 @@ pub fn run(config: appconfig.Config) !void {
 
     app.msgSend(void, "activateIgnoringOtherApps:", .{true});
     window.msgSend(void, "makeKeyAndOrderFront:", .{@as(objc.c.id, null)});
+    if (config.render_bench) {
+        io_compat.stderrPrint("render-bench launch_ms={d:.3}\n", .{time_compat.sinceProcessStartMs()}) catch {};
+    }
     _ = window.msgSend(bool, "makeFirstResponder:", .{text_field});
     app.msgSend(void, "run", .{});
 }
