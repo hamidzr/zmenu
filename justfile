@@ -43,5 +43,8 @@ render-bench:
 	scripts/render_bench.sh
 
 install: build
-	cp zig-out/bin/* ~/.local/bin/
+	mkdir -p ~/.local/bin
+	rm -f ~/.local/bin/zmenu ~/.local/bin/zmenuctl
+	cp zig-out/bin/zmenu zig-out/bin/zmenuctl ~/.local/bin/
+	chmod +x ~/.local/bin/zmenu ~/.local/bin/zmenuctl
 
