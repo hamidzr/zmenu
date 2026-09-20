@@ -20,7 +20,6 @@ const nsString = objc_helpers.nsString;
 const nsColor = objc_helpers.nsColor;
 const nsFont = objc_helpers.nsFont;
 const applyPlaceholderColor = objc_helpers.applyPlaceholderColor;
-const applyColumnFont = objc_helpers.applyColumnFont;
 
 const startUpdateQueue = updates.startUpdateQueue;
 const followStdinThread = updates.followStdinThread;
@@ -256,7 +255,6 @@ pub fn run(config: appconfig.Config) !void {
         table_index_column.msgSend(void, "setMinWidth:", .{numeric_width});
         table_index_column.msgSend(void, "setMaxWidth:", .{numeric_width});
         table_index_column.msgSend(void, "setResizingMask:", .{@as(c_ulong, 0)}); // no resizing
-        applyColumnFont(table_index_column, table_font, secondary_text_color);
         table_view.msgSend(void, "addTableColumn:", .{table_index_column});
         index_column = table_index_column;
     }
@@ -267,17 +265,12 @@ pub fn run(config: appconfig.Config) !void {
         icon_column.msgSend(void, "setMinWidth:", .{icon_width});
         icon_column.msgSend(void, "setMaxWidth:", .{icon_width});
         icon_column.msgSend(void, "setResizingMask:", .{@as(c_ulong, 0)}); // no resizing
-        const NSImageCell = objc.getClass("NSImageCell").?;
-        const image_cell = NSImageCell.msgSend(objc.Object, "alloc", .{})
-            .msgSend(objc.Object, "init", .{});
-        icon_column.msgSend(void, "setDataCell:", .{image_cell});
         table_view.msgSend(void, "addTableColumn:", .{icon_column});
     }
     const table_column = NSTableColumn.msgSend(objc.Object, "alloc", .{})
         .msgSend(objc.Object, "initWithIdentifier:", .{nsString("items")});
     table_column.msgSend(void, "setWidth:", .{item_width});
     table_column.msgSend(void, "setResizingMask:", .{@as(c_ulong, 1)}); // autoresize with table
-    applyColumnFont(table_column, table_font, text_color);
     table_view.msgSend(void, "addTableColumn:", .{table_column});
 
     const NSScrollView = objc.getClass("NSScrollView").?;
@@ -303,9 +296,8 @@ pub fn run(config: appconfig.Config) !void {
         scroll_view.msgSend(void, "setBackgroundColor:", .{list_color});
         scroll_view.msgSend(void, "setBorderType:", .{@as(c_ulong, 0)});
     }
-    // TODO: config.selection_color is accepted but not applied yet. This table is
-    // cell-based (objectValueForTableColumn:), so tableView:rowViewForRow: is never
-    // called; a custom selection color needs custom cell rendering or a view-based table.
+    // view-based table: tableView:viewForTableColumn:row: supplies cell views and
+    // tableView:rowViewForRow: supplies ZigTableRowView, which draws selection_color.
 
     content_view.msgSend(void, "addSubview:", .{scroll_view});
     content_view.msgSend(void, "addSubview:", .{text_field});

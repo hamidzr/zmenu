@@ -163,3 +163,24 @@ fn drawSystemSelection(target: objc.c.id, dirty_rect: NSRect) void {
     const NSTableRowView = objc.getClass("NSTableRowView").?;
     objc.Object.fromId(target).msgSendSuper(NSTableRowView, void, "drawSelectionInRect:", .{dirty_rect});
 }
+
+fn rowViewClass() objc.Class {
+    if (objc.getClass("ZigTableRowView")) |cls| return cls;
+
+    const NSTableRowView = objc.getClass("NSTableRowView").?;
+    const cls = objc.allocateClassPair(NSTableRowView, "ZigTableRowView").?;
+    if (!cls.addMethod("drawSelectionInRect:", rowViewDrawSelectionInRect)) {
+        @panic("failed to add drawSelectionInRect: method");
+    }
+    objc.registerClassPair(cls);
+    return cls;
+}
+
+pub fn makeRowView() objc.Object {
+    const cls = rowViewClass();
+    return cls.msgSend(objc.Object, "alloc", .{})
+        .msgSend(objc.Object, "initWithFrame:", .{NSRect{
+        .origin = .{ .x = 0, .y = 0 },
+        .size = .{ .width = 0, .height = 0 },
+    }});
+}

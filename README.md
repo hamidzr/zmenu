@@ -38,8 +38,16 @@ on macOS Accessibility + Screen Recording permissions to capture the window.
 It feeds a single item so `--auto-accept` fires without user interaction. Note this exits before
 `app.run()`, so it is a process-init/filter floor, not paint-to-visible.
 
+### Render benchmark
+`just render-bench` (or `scripts/render_bench.sh`, `COUNT=2000` by default) measures table
+reload + paint cost. It runs `zmenu --render-bench`, which shows the window, types the first
+item's label one character at a time (filter + reload + paint per keystroke), accepts the item,
+and exits. It prints per-keystroke stats plus spawn-to-window time, and times the whole flow
+with hyperfine when available. The table is view-based (`tableView:viewForTableColumn:row:` and
+a custom `NSTableRowView`), so `selection_color` draws the row highlight.
+
 ### Config + CLI
-Supported flags: `--menu-id/-m`, `--initial-query/-q`, `--search-method/-s`, `--preserve-order/-o`, `--no-levenshtein-fallback`, `--auto-accept`, `--terminal`, `--follow-stdin`, `--ipc-only`, `--numeric-selection-mode`, `--no-numeric-selection`, `--show-icons`, `--title/-t`, `--prompt/-p`, `--min-width`, `--min-height`, `--max-width`, `--max-height`, `--row-height`, `--field-height`, `--padding`, `--numeric-column-width`, `--icon-column-width`, `--alternate-rows`, `--background-color`, `--list-background-color`, `--field-background-color`, `--text-color`, `--secondary-text-color`, `--selection-color`, `--corner-radius`, `--no-vibrancy`, `--vibrancy=`, `--init-config`.
+Supported flags: `--menu-id/-m`, `--initial-query/-q`, `--search-method/-s`, `--preserve-order/-o`, `--no-levenshtein-fallback`, `--auto-accept`, `--terminal`, `--follow-stdin`, `--ipc-only`, `--numeric-selection-mode`, `--no-numeric-selection`, `--show-icons`, `--title/-t`, `--prompt/-p`, `--min-width`, `--min-height`, `--max-width`, `--max-height`, `--row-height`, `--field-height`, `--padding`, `--numeric-column-width`, `--icon-column-width`, `--alternate-rows`, `--background-color`, `--list-background-color`, `--field-background-color`, `--text-color`, `--secondary-text-color`, `--selection-color`, `--corner-radius`, `--no-vibrancy`, `--vibrancy=`, `--init-config`, `--render-bench`.
 Supported env: `GMENU_MENU_ID`, `GMENU_INITIAL_QUERY`, `GMENU_SEARCH_METHOD`, `GMENU_PRESERVE_ORDER`, `GMENU_LEVENSHTEIN_FALLBACK`, `GMENU_AUTO_ACCEPT`, `GMENU_TERMINAL_MODE`, `GMENU_FOLLOW_STDIN`, `GMENU_IPC_ONLY`, `GMENU_NUMERIC_SELECTION_MODE`, `GMENU_NO_NUMERIC_SELECTION`, `GMENU_SHOW_ICONS`, `GMENU_ACCEPT_CUSTOM_SELECTION`, `GMENU_TITLE`, `GMENU_PROMPT`, `GMENU_MIN_WIDTH`, `GMENU_MIN_HEIGHT`, `GMENU_MAX_WIDTH`, `GMENU_MAX_HEIGHT`, `GMENU_ROW_HEIGHT`, `GMENU_FIELD_HEIGHT`, `GMENU_PADDING`, `GMENU_NUMERIC_COLUMN_WIDTH`, `GMENU_ICON_COLUMN_WIDTH`, `GMENU_ALTERNATE_ROWS`, `GMENU_BACKGROUND_COLOR`, `GMENU_LIST_BACKGROUND_COLOR`, `GMENU_FIELD_BACKGROUND_COLOR`, `GMENU_TEXT_COLOR`, `GMENU_SECONDARY_TEXT_COLOR`, `GMENU_SELECTION_COLOR`, `GMENU_CORNER_RADIUS`, `GMENU_VIBRANCY`.
 Rounded corners (10pt) and a translucent `hudWindow` vibrancy material are on by default; disable
 with `--no-vibrancy` or set `corner_radius`/`vibrancy` in the config file.

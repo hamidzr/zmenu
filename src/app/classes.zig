@@ -36,8 +36,11 @@ fn dataSourceClass() objc.Class {
     if (!cls.addMethod("numberOfRowsInTableView:", callbacks.numberOfRowsInTableView)) {
         @panic("failed to add numberOfRowsInTableView: method");
     }
-    if (!cls.addMethod("tableView:objectValueForTableColumn:row:", callbacks.tableViewObjectValue)) {
-        @panic("failed to add tableView:objectValueForTableColumn:row: method");
+    if (!cls.addMethod("tableView:viewForTableColumn:row:", callbacks.tableViewViewForTableColumn)) {
+        @panic("failed to add tableView:viewForTableColumn:row: method");
+    }
+    if (!cls.addMethod("tableView:rowViewForRow:", callbacks.tableViewRowViewForRow)) {
+        @panic("failed to add tableView:rowViewForRow: method");
     }
     if (!cls.addMethod("tableView:shouldSelectRow:", callbacks.tableViewShouldSelectRow)) {
         @panic("failed to add tableView:shouldSelectRow: method");

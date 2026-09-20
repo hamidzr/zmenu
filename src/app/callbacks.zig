@@ -8,6 +8,7 @@ const objc_helpers = @import("objc_helpers.zig");
 const updates = @import("updates.zig");
 const logic = @import("logic.zig");
 const state = @import("state.zig");
+const views = @import("views.zig");
 
 const nsString = objc_helpers.nsString;
 const columnIsIndex = objc_helpers.columnIsIndex;
@@ -90,7 +91,7 @@ pub fn numberOfRowsInTableView(target: objc.c.id, sel: objc.c.SEL, table: objc.c
     return @intCast(app_state.model.filtered.items.len);
 }
 
-pub fn tableViewObjectValue(
+pub fn tableViewViewForTableColumn(
     target: objc.c.id,
     sel: objc.c.SEL,
     table: objc.c.id,
@@ -102,32 +103,76 @@ pub fn tableViewObjectValue(
     _ = table;
 
     const app_state = state.g_state orelse return null;
-    if (row < 0) return null;
+    if (column == null or row < 0) return null;
 
     const row_index: usize = @intCast(row);
     if (row_index >= app_state.model.filtered.items.len) return null;
 
-    if (column != null) {
-        const column_obj = objc.Object.fromId(column);
-        if (columnIsIndex(column_obj)) {
-            const query = logic.currentQuery(app_state);
-            if (app_state.config.numericSelectionEnabled(app_state.model.filtered.items.len, query) and row_index < state.digit_labels.len) {
-                return nsString(state.digit_labels[row_index]).value;
-            }
-            return nsString("").value;
+    const column_obj = objc.Object.fromId(column);
+    const table_view = app_state.table_view;
+    const row_height = app_state.config.row_height;
+    const column_width = column_obj.msgSend(f64, "width", .{});
+
+    if (columnIsIndex(column_obj)) {
+        const cell = views.textCell(table_view, row_height, column_width, .{
+            .identifier = "zmenuIndexCell",
+            .font = app_state.row_font,
+            .text_color = app_state.index_text_color,
+            .alignment = 0,
+            .left_pad = 4.0,
+            .right_pad = 2.0,
+        });
+        const query = logic.currentQuery(app_state);
+        if (app_state.config.numericSelectionEnabled(app_state.model.filtered.items.len, query) and row_index < state.digit_labels.len) {
+            views.setCellText(cell, state.digit_labels[row_index]);
+        } else {
+            views.setCellText(cell, "");
         }
+        return cell.value;
     }
-    if (app_state.config.show_icons and column != null) {
-        const column_obj = objc.Object.fromId(column);
-        if (columnIsIcon(column_obj)) {
-            const item_index = app_state.model.filtered.items[row_index];
-            const image = iconImage(app_state.model.items[item_index].icon) orelse return null;
-            return image.value;
-        }
+
+    if (app_state.config.show_icons and columnIsIcon(column_obj)) {
+        const cell = views.iconCell(table_view, row_height, column_width, "zmenuIconCell");
+        const item_index = app_state.model.filtered.items[row_index];
+        views.setCellImage(cell, iconImage(app_state.model.items[item_index].icon));
+        return cell.value;
     }
+
+    const cell = views.textCell(table_view, row_height, column_width, .{
+        .identifier = "zmenuItemCell",
+        .font = app_state.row_font,
+        .text_color = app_state.item_text_color,
+        .alignment = 0,
+        .left_pad = 6.0,
+        .right_pad = 6.0,
+    });
     const item_index = app_state.model.filtered.items[row_index];
-    const item = app_state.model.items[item_index];
-    return nsString(item.label).value;
+    views.setCellText(cell, app_state.model.items[item_index].label);
+    return cell.value;
+}
+
+pub fn tableViewRowViewForRow(
+    target: objc.c.id,
+    sel: objc.c.SEL,
+    table: objc.c.id,
+    row: c_long,
+) callconv(.c) objc.c.id {
+    _ = target;
+    _ = sel;
+    _ = table;
+    _ = row;
+
+    const app_state = state.g_state orelse return null;
+    const identifier = "zmenuRow";
+    const reused = app_state.table_view.msgSend(objc.Object, "makeViewWithIdentifier:owner:", .{
+        nsString(identifier),
+        @as(objc.c.id, null),
+    });
+    if (reused.value != null) return reused.value;
+
+    const row_view = views.makeRowView();
+    row_view.msgSend(void, "setIdentifier:", .{nsString(identifier)});
+    return row_view.value;
 }
 
 pub fn tableViewShouldSelectRow(

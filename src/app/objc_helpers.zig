@@ -48,17 +48,6 @@ pub fn applyPlaceholderColor(field: objc.Object, placeholder: [*:0]const u8, col
     field.msgSend(void, "setPlaceholderAttributedString:", .{attributed});
 }
 
-pub fn applyColumnFont(column: objc.Object, font: objc.Object, text_color: ?objc.Object) void {
-    const NSTextFieldCell = objc.getClass("NSTextFieldCell").?;
-    const cell = NSTextFieldCell.msgSend(objc.Object, "alloc", .{})
-        .msgSend(objc.Object, "init", .{});
-    cell.msgSend(void, "setFont:", .{font});
-    if (text_color) |color| {
-        cell.msgSend(void, "setTextColor:", .{color});
-    }
-    column.msgSend(void, "setDataCell:", .{cell});
-}
-
 pub fn columnIsIndex(column: objc.Object) bool {
     const identifier = column.msgSend(objc.Object, "identifier", .{});
     const utf8_ptr = identifier.msgSend(?[*:0]const u8, "UTF8String", .{});
