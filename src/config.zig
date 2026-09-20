@@ -60,6 +60,8 @@ pub const Config = struct {
     text_color: ?Color,
     secondary_text_color: ?Color,
     selection_color: ?Color,
+    corner_radius: f64,
+    vibrancy: bool,
 
     pub fn hasNumericSelectionColumn(self: Config) bool {
         return self.numeric_selection_mode != .off;
@@ -106,5 +108,7 @@ pub fn defaults() Config {
         .text_color = .{ .r = 0.94, .g = 0.95, .b = 0.97, .a = 1.0 },
         .secondary_text_color = .{ .r = 0.75, .g = 0.77, .b = 0.82, .a = 1.0 },
         .selection_color = .{ .r = 0.22, .g = 0.24, .b = 0.3, .a = 0.9 },
+        .corner_radius = 10.0,
+        .vibrancy = true,
     };
 }

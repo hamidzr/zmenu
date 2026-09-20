@@ -34,6 +34,10 @@ clean:
 visual:
 	scripts/visual_test.sh
 
+# measure cold spawn-to-accept cost (requires hyperfine)
+bench:
+	scripts/bench_spawn.sh
+
 install: build
 	cp zig-out/bin/* ~/.local/bin/
 

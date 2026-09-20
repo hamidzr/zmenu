@@ -21,15 +21,16 @@ PID=$!
 
 sleep 0.8
 
-WINDOW_ID=$(osascript -e 'tell application "System Events" to tell process "zmenu" to get the id of front window' 2>/dev/null || true)
-if [ -z "$WINDOW_ID" ]; then
+# zmenu is a borderless window, so System Events reports no window id; capture by bounds instead.
+GEOM=$(osascript -e 'tell application "System Events" to tell process "zmenu" to get {position, size} of window 1' 2>/dev/null | tr -d ' ' || true)
+if [ -z "$GEOM" ]; then
   echo "unable to locate zmenu window (grant Accessibility + Screen Recording permissions)" >&2
   kill "$PID" 2>/dev/null || true
   wait "$PID" 2>/dev/null || true
   exit 1
 fi
 
-screencapture -l "$WINDOW_ID" "$ACTUAL"
+screencapture -x -R"$GEOM" "$ACTUAL"
 
 osascript -e 'tell application "System Events" to keystroke (ASCII character 27)' 2>/dev/null || true
 kill "$PID" 2>/dev/null || true
@@ -44,6 +45,15 @@ fi
 if cmp -s "$ACTUAL" "$BASELINE"; then
   echo "visual snapshot matches"
   exit 0
+fi
+
+# allow small rendering differences (caret blink, subpixel AA) when ImageMagick is available
+if command -v magick >/dev/null 2>&1; then
+  RMSE=$(magick compare -metric RMSE "$BASELINE" "$ACTUAL" null: 2>&1 | sed 's/.*(\(.*\))/\1/' || true)
+  if [ -n "$RMSE" ] && awk "BEGIN{exit !($RMSE < 0.01)}"; then
+    echo "visual snapshot matches (rmse=$RMSE)"
+    exit 0
+  fi
 fi
 
 echo "visual snapshot mismatch: $ACTUAL" >&2

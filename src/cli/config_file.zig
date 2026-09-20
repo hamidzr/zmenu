@@ -43,6 +43,8 @@ const config_key_variants = [_]ConfigKeyVariant{
     .{ .canonical = "text_color", .camel = "textColor" },
     .{ .canonical = "secondary_text_color", .camel = "secondaryTextColor" },
     .{ .canonical = "selection_color", .camel = "selectionColor" },
+    .{ .canonical = "corner_radius", .camel = "cornerRadius" },
+    .{ .canonical = "vibrancy", .camel = "" },
 };
 
 pub fn loadConfigFile(allocator: std.mem.Allocator, menu_id: [:0]const u8, config: *appconfig.Config) !void {
@@ -127,6 +129,8 @@ pub fn writeDefaultConfig(allocator: std.mem.Allocator, menu_id: [:0]const u8) !
         \\text_color: ""
         \\secondary_text_color: ""
         \\selection_color: ""
+        \\corner_radius: {d}
+        \\vibrancy: true
         \\
     ,
         .{
@@ -142,6 +146,7 @@ pub fn writeDefaultConfig(allocator: std.mem.Allocator, menu_id: [:0]const u8) !
             @as(i64, @intFromFloat(defaults.padding)),
             @as(i64, @intFromFloat(defaults.numeric_column_width)),
             @as(i64, @intFromFloat(defaults.icon_column_width)),
+            @as(i64, @intFromFloat(defaults.corner_radius)),
         },
     );
 
@@ -264,6 +269,14 @@ fn applyConfigKV(allocator: std.mem.Allocator, config: *appconfig.Config, key: [
     }
     if (eqKey(key, "alternate_rows") or eqKey(key, "alternateRows")) {
         config.alternate_rows = try parse.parseBool(value);
+        return;
+    }
+    if (eqKey(key, "corner_radius") or eqKey(key, "cornerRadius")) {
+        config.corner_radius = try std.fmt.parseFloat(f64, value);
+        return;
+    }
+    if (eqKey(key, "vibrancy")) {
+        config.vibrancy = try parse.parseBool(value);
         return;
     }
     if (eqKey(key, "background_color") or eqKey(key, "backgroundColor")) {

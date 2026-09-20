@@ -104,26 +104,48 @@ pub fn run(config: appconfig.Config) !void {
 
     window.msgSend(void, "center", .{});
     window.msgSend(void, "setTitle:", .{nsString(config.title)});
-    if (config.background_color) |color| {
+
+    // transparent window so the vibrancy material can show through
+    const NSColor = objc.getClass("NSColor").?;
+    if (config.vibrancy) {
+        window.msgSend(void, "setOpaque:", .{false});
+        window.msgSend(void, "setBackgroundColor:", .{NSColor.msgSend(objc.Object, "clearColor", .{})});
+    } else if (config.background_color) |color| {
         window.msgSend(void, "setBackgroundColor:", .{nsColor(color)});
     }
 
-    // add subtle border around window
+    // subtle border and rounded corners on the content layer
     window.msgSend(void, "setHasShadow:", .{true});
     const content_view = window.msgSend(objc.Object, "contentView", .{});
     content_view.msgSend(void, "setWantsLayer:", .{true});
     const layer = content_view.msgSend(objc.Object, "layer", .{});
-    const NSColor = objc.getClass("NSColor").?;
     const border_color = NSColor.msgSend(objc.Object, "colorWithSRGBRed:green:blue:alpha:", .{
-        @as(f64, 0.5),
-        @as(f64, 0.5),
-        @as(f64, 0.5),
-        @as(f64, 0.3),
+        @as(f64, 1.0),
+        @as(f64, 1.0),
+        @as(f64, 1.0),
+        @as(f64, 0.1),
     });
     const cg_color = border_color.msgSend(objc.c.id, "CGColor", .{});
     layer.msgSend(void, "setBorderColor:", .{cg_color});
     layer.msgSend(void, "setBorderWidth:", .{@as(f64, 1.0)});
-    layer.msgSend(void, "setCornerRadius:", .{@as(f64, 0.0)});
+    layer.msgSend(void, "setCornerRadius:", .{config.corner_radius});
+    layer.msgSend(void, "setMasksToBounds:", .{config.corner_radius > 0.0});
+
+    // translucent material behind the list; added first so it stays behind
+    if (config.vibrancy) {
+        const NSVisualEffectView = objc.getClass("NSVisualEffectView").?;
+        const effect_rect = NSRect{
+            .origin = .{ .x = 0, .y = 0 },
+            .size = .{ .width = window_width, .height = window_height },
+        };
+        const effect = NSVisualEffectView.msgSend(objc.Object, "alloc", .{})
+            .msgSend(objc.Object, "initWithFrame:", .{effect_rect});
+        effect.msgSend(void, "setMaterial:", .{@as(c_long, 13)}); // NSVisualEffectMaterialHUDWindow
+        effect.msgSend(void, "setBlendingMode:", .{@as(c_long, 0)}); // NSVisualEffectBlendingModeBehindWindow
+        effect.msgSend(void, "setState:", .{@as(c_long, 1)}); // NSVisualEffectStateActive
+        effect.msgSend(void, "setAutoresizingMask:", .{@as(c_ulong, 18)}); // width | height
+        content_view.msgSend(void, "addSubview:", .{effect});
+    }
 
     var match_label_width: f64 = 100.0;
     var search_width: f64 = list_width - match_label_width;
@@ -264,7 +286,14 @@ pub fn run(config: appconfig.Config) !void {
     scroll_view.msgSend(void, "setDocumentView:", .{table_view});
     scroll_view.msgSend(void, "setHasVerticalScroller:", .{true});
     scroll_view.msgSend(void, "setAutohidesScrollers:", .{true});
-    if (config.list_background_color) |color| {
+    if (config.vibrancy) {
+        const clear = NSColor.msgSend(objc.Object, "clearColor", .{});
+        table_view.msgSend(void, "setBackgroundColor:", .{clear});
+        table_view.msgSend(void, "setGridStyleMask:", .{@as(c_ulong, 0)});
+        scroll_view.msgSend(void, "setDrawsBackground:", .{false});
+        scroll_view.msgSend(void, "setBackgroundColor:", .{clear});
+        scroll_view.msgSend(void, "setBorderType:", .{@as(c_ulong, 0)});
+    } else if (config.list_background_color) |color| {
         const list_color = nsColor(color);
         table_view.msgSend(void, "setBackgroundColor:", .{list_color});
         table_view.msgSend(void, "setGridStyleMask:", .{@as(c_ulong, 0)});
@@ -273,9 +302,9 @@ pub fn run(config: appconfig.Config) !void {
         scroll_view.msgSend(void, "setBackgroundColor:", .{list_color});
         scroll_view.msgSend(void, "setBorderType:", .{@as(c_ulong, 0)});
     }
-    // TODO: config.selection_color is accepted but not applied yet.
-    // Custom selection colors require NSTableViewSelectionHighlightStyleNone
-    // and implementing custom cell rendering.
+    // TODO: config.selection_color is accepted but not applied yet. This table is
+    // cell-based (objectValueForTableColumn:), so tableView:rowViewForRow: is never
+    // called; a custom selection color needs custom cell rendering or a view-based table.
 
     content_view.msgSend(void, "addSubview:", .{scroll_view});
     content_view.msgSend(void, "addSubview:", .{text_field});

@@ -192,6 +192,21 @@ pub fn applyArgs(allocator: std.mem.Allocator, args: []const [:0]const u8, confi
             config.alternate_rows = true;
             continue;
         }
+        if (std.mem.eql(u8, arg, "--corner-radius")) {
+            i += 1;
+            if (i >= args.len) return error.MissingValue;
+            config.corner_radius = try std.fmt.parseFloat(f64, args[i]);
+            continue;
+        }
+        if (std.mem.eql(u8, arg, "--no-vibrancy")) {
+            config.vibrancy = false;
+            continue;
+        }
+        if (std.mem.startsWith(u8, arg, "--vibrancy=")) {
+            const value = arg["--vibrancy=".len..];
+            config.vibrancy = try parse.parseBool(value);
+            continue;
+        }
         if (std.mem.eql(u8, arg, "--background-color")) {
             i += 1;
             if (i >= args.len) return error.MissingValue;

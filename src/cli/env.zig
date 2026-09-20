@@ -96,6 +96,16 @@ pub fn applyEnv(allocator: std.mem.Allocator, config: *appconfig.Config) !void {
     } else |err| {
         if (err != error.EnvironmentVariableNotFound) return err;
     }
+    if (envValue(allocator, "GMENU_CORNER_RADIUS")) |value| {
+        config.corner_radius = try std.fmt.parseFloat(f64, value);
+    } else |err| {
+        if (err != error.EnvironmentVariableNotFound) return err;
+    }
+    if (envValue(allocator, "GMENU_VIBRANCY")) |value| {
+        config.vibrancy = try parse.parseBool(value);
+    } else |err| {
+        if (err != error.EnvironmentVariableNotFound) return err;
+    }
     if (envValue(allocator, "GMENU_BACKGROUND_COLOR")) |value| {
         config.background_color = try parse.parseColorOptional(value);
     } else |err| {
