@@ -1,4 +1,4 @@
-# zmenu IPC protocol (v1)
+# zmenu IPC protocol (v2)
 
 zmenu listens on a local Unix domain socket and accepts framed JSON messages.
 The API is intended for updating the in-memory item list while the GUI is
@@ -27,19 +27,20 @@ Where `<length>` is the decimal byte count of the JSON payload.
 
 ```json
 {
-  "v": 1,
+  "v": 2,
   "cmd": "set" | "append" | "prepend",
   "items": [
-    { "id": "item-id", "label": "Item label", "icon": "app" }
+    { "id": "item-id", "label": "Item label", "icon": "/Applications/App.app" }
   ]
 }
 ```
 
-- `v` is the protocol version (currently `1`).
+- `v` is the protocol version (currently `2`).
 - `cmd` determines how items are applied.
 - `items` is required for `set`, `append`, and `prepend`.
 - `id` is a stable identifier string (recommended for IPC-only mode).
-- `label` is required. `icon` is optional (app/file/folder/info).
+- `label` is required.
+- `icon` is optional. An absolute file or app bundle path displays the macOS workspace icon for that path. An absent, empty, relative, or missing path displays a blank icon cell.
 - Extra fields on item objects are preserved for IPC-only output.
 
 ## Behavior
@@ -75,5 +76,5 @@ Or raw protocol:
 
 ```text
 46
-{"v":1,"cmd":"append","items":[{"id":"hi","label":"hi"}]}
+{"v":2,"cmd":"append","items":[{"id":"hi","label":"hi"}]}
 ```

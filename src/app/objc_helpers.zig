@@ -1,7 +1,7 @@
 const std = @import("std");
 const objc = @import("objc");
 const appconfig = @import("../config.zig");
-const menu = @import("../menu.zig");
+const io_compat = @import("../io_compat.zig");
 
 pub const NSPoint = extern struct {
     x: f64,
@@ -64,16 +64,30 @@ pub fn columnIsIcon(column: objc.Object) bool {
     return std.mem.eql(u8, name, "icon");
 }
 
-pub fn iconImage(kind: menu.IconKind) ?objc.Object {
-    const name: [*:0]const u8 = switch (kind) {
-        .app => "NSApplicationIcon",
-        .file => "NSGenericDocument",
-        .folder => "NSFolder",
-        .info => "NSInfo",
-        else => return null,
+var icon_cache: std.StringHashMapUnmanaged(?objc.Object) = .{};
+
+/// Loads and retains the workspace icon for an absolute path. Missing and
+/// invalid paths are cached as blank to avoid repeated filesystem checks.
+pub fn iconImage(path: ?[:0]const u8) ?objc.Object {
+    const icon_path = path orelse return null;
+    if (icon_path.len == 0 or !std.fs.path.isAbsolute(icon_path)) return null;
+    if (icon_cache.get(icon_path)) |cached| return cached;
+
+    const image = loadIconImage(icon_path);
+    const key = std.heap.c_allocator.dupe(u8, icon_path) catch return image;
+    icon_cache.put(std.heap.c_allocator, key, image) catch {
+        std.heap.c_allocator.free(key);
+        return image;
     };
-    const NSImage = objc.getClass("NSImage").?;
-    const image = NSImage.msgSend(objc.Object, "imageNamed:", .{nsString(name)});
-    if (image.value == null) return null;
     return image;
+}
+
+fn loadIconImage(path: [:0]const u8) ?objc.Object {
+    io_compat.accessAbsolute(path, .{}) catch return null;
+
+    const NSWorkspace = objc.getClass("NSWorkspace").?;
+    const workspace = NSWorkspace.msgSend(objc.Object, "sharedWorkspace", .{});
+    const image = workspace.msgSend(objc.Object, "iconForFile:", .{nsString(path.ptr)});
+    if (image.value == null) return null;
+    return image.retain();
 }

@@ -5,16 +5,8 @@ const search = @import("search.zig");
 pub const MenuItem = struct {
     label: [:0]const u8,
     index: usize,
-    icon: IconKind,
+    icon: ?[:0]const u8,
     ipc_payload: ?[]const u8 = null,
-};
-
-pub const IconKind = enum {
-    none,
-    app,
-    file,
-    folder,
-    info,
 };
 
 pub const stdin_max_bytes: usize = 16 * 1024 * 1024;
@@ -55,48 +47,15 @@ fn trimLineEnding(line: []const u8) []const u8 {
     return line;
 }
 
-pub fn parseItem(allocator: std.mem.Allocator, line: []const u8, index: usize, parse_icon: bool) !MenuItem {
-    var icon: IconKind = .none;
-    var label = trimLineEnding(line);
-
-    if (parse_icon and label.len >= 3 and label[0] == '[') {
-        if (std.mem.indexOfScalar(u8, label, ']')) |close_idx| {
-            const raw = label[1..close_idx];
-            if (iconFromName(raw)) |kind| {
-                icon = kind;
-                label = std.mem.trimStart(u8, label[close_idx + 1 ..], " \t");
-            }
-        }
-    }
-
+pub fn parseItem(allocator: std.mem.Allocator, line: []const u8, index: usize) !MenuItem {
+    const label = trimLineEnding(line);
     if (label.len == 0) return error.EmptyLabel;
 
     const label_z = try allocator.dupeZ(u8, label);
-    return .{ .label = label_z, .index = index, .icon = icon, .ipc_payload = null };
+    return .{ .label = label_z, .index = index, .icon = null, .ipc_payload = null };
 }
 
-pub fn iconKindFromName(name: ?[]const u8) IconKind {
-    if (name == null) return .none;
-    return iconFromName(name.?) orelse .none;
-}
-
-fn iconFromName(name: []const u8) ?IconKind {
-    if (std.ascii.eqlIgnoreCase(name, "app") or std.ascii.eqlIgnoreCase(name, "application")) {
-        return .app;
-    }
-    if (std.ascii.eqlIgnoreCase(name, "file")) {
-        return .file;
-    }
-    if (std.ascii.eqlIgnoreCase(name, "folder") or std.ascii.eqlIgnoreCase(name, "dir") or std.ascii.eqlIgnoreCase(name, "directory")) {
-        return .folder;
-    }
-    if (std.ascii.eqlIgnoreCase(name, "info")) {
-        return .info;
-    }
-    return null;
-}
-
-pub fn readItems(allocator: std.mem.Allocator, parse_icons: bool, unique: bool) ![]MenuItem {
+pub fn readItems(allocator: std.mem.Allocator, unique: bool) ![]MenuItem {
     var input = try readStdinLines(allocator, stdin_max_bytes);
     defer input.deinit(allocator);
 
@@ -109,7 +68,7 @@ pub fn readItems(allocator: std.mem.Allocator, parse_icons: bool, unique: bool) 
     errdefer items.deinit(allocator);
 
     for (input.lines) |line| {
-        const item = try parseItem(allocator, line, items.items.len, parse_icons);
+        const item = try parseItem(allocator, line, items.items.len);
         if (unique) {
             const gop = try seen.getOrPut(allocator, item.label);
             if (gop.found_existing) continue;

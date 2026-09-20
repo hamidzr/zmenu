@@ -8,7 +8,7 @@ pub const Item = struct {
 };
 
 pub const Message = struct {
-    v: u32 = 1,
+    v: u32 = 2,
     cmd: []const u8,
     items: ?[]Item = null,
 };

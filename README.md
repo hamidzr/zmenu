@@ -56,8 +56,9 @@ Theme colors accept hex strings like `#RRGGBB` or `#RRGGBBAA` (empty/`none`/`def
 
 
 ### IPC + dynamic items
-zmenu listens on a local Unix socket for dynamic item updates. Use `zmenuctl` to send
-`set`, `append`, or `prepend` commands to a running instance:
+zmenu listens on a local Unix socket for dynamic item updates. Protocol v2 accepts an optional
+absolute file or app bundle path in `icon`; `--show-icons` enables its workspace icon column.
+Use `zmenuctl` to send `set`, `append`, or `prepend` commands to a running instance:
 
 ```bash
 printf "alpha\nbravo\n" | zmenuctl --menu-id demo set --stdin
@@ -75,7 +76,7 @@ zmenu --menu-id demo --ipc-only
 Example stdout:
 
 ```json
-{"id":"window:123","label":"Safari — Docs","icon":"app"}
+{"id":"window:123","label":"Safari — Docs","icon":"/Applications/Safari.app"}
 ```
 
 ### Compatibility notes

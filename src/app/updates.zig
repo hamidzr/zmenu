@@ -177,7 +177,10 @@ pub fn menuItemFromIpc(allocator: std.mem.Allocator, payload: []const u8) ?menu.
 
     const label_z = allocator.dupeZ(u8, label) catch return null;
     errdefer allocator.free(label_z);
-    const icon = menu.iconKindFromName(item.icon);
+    const icon = if (item.icon) |path|
+        allocator.dupeZ(u8, path) catch return null
+    else
+        null;
     const payload_copy = allocator.dupe(u8, payload) catch return null;
 
     return .{ .label = label_z, .index = 0, .icon = icon, .ipc_payload = payload_copy };

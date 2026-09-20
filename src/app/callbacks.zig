@@ -290,7 +290,7 @@ pub fn onUpdateTimer(target: objc.c.id, sel: objc.c.SEL, timer: objc.c.id) callc
         }
         const line = update.line orelse continue;
         const item = switch (update.source) {
-            .stdin => menu.parseItem(app_state.allocator, line, 0, app_state.config.show_icons) catch {
+            .stdin => menu.parseItem(app_state.allocator, line, 0) catch {
                 queue.allocator.free(line);
                 continue;
             },

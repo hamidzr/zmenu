@@ -35,7 +35,7 @@ pub fn run(config: appconfig.Config) !void {
 
     var items: []menu.MenuItem = &[_]menu.MenuItem{};
     if (!config.ipc_only and !config.follow_stdin) {
-        items = logic.readItems(allocator, config.show_icons, config.unique) catch {
+        items = logic.readItems(allocator, config.unique) catch {
             io_compat.stderrPrint("zmenu: stdin is empty\n", .{}) catch {};
             std.process.exit(exit_codes.unknown_error);
         };
