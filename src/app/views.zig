@@ -97,9 +97,13 @@ fn makeLabel(row_height: f64, column_width: f64, style: TextCellStyle) objc.Obje
     return label;
 }
 
+pub fn iconSide(row_height: f64, column_width: f64) f64 {
+    return @max(@min(column_width, row_height) * 0.7, 12.0);
+}
+
 fn makeImageView(row_height: f64, column_width: f64) objc.Object {
     const NSImageView = objc.getClass("NSImageView").?;
-    const side = @max(@min(column_width, row_height) * 0.7, 12.0);
+    const side = iconSide(row_height, column_width);
     const x = @max((column_width - side) / 2.0, 0.0);
     const y = @max((row_height - side) / 2.0, 0.0);
 

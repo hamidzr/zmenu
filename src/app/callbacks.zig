@@ -134,7 +134,7 @@ pub fn tableViewViewForTableColumn(
     if (app_state.config.show_icons and columnIsIcon(column_obj)) {
         const cell = views.iconCell(table_view, row_height, column_width, "zmenuIconCell");
         const item_index = app_state.model.filtered.items[row_index];
-        views.setCellImage(cell, iconImage(app_state.model.items[item_index].icon));
+        views.setCellImage(cell, iconImage(app_state.model.items[item_index].icon, views.iconSide(row_height, column_width)));
         return cell.value;
     }
 

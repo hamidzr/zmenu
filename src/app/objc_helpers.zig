@@ -66,14 +66,15 @@ pub fn columnIsIcon(column: objc.Object) bool {
 
 var icon_cache: std.StringHashMapUnmanaged(?objc.Object) = .{};
 
-/// Loads and retains the workspace icon for an absolute path. Missing and
-/// invalid paths are cached as blank to avoid repeated filesystem checks.
-pub fn iconImage(path: ?[:0]const u8) ?objc.Object {
+/// Loads and retains the workspace icon for an absolute path, resized once
+/// to the row size so per-draw scaling disappears. Missing and invalid paths
+/// are cached as blank to avoid repeated filesystem checks.
+pub fn iconImage(path: ?[:0]const u8, side: f64) ?objc.Object {
     const icon_path = path orelse return null;
     if (icon_path.len == 0 or !std.fs.path.isAbsolute(icon_path)) return null;
     if (icon_cache.get(icon_path)) |cached| return cached;
 
-    const image = loadIconImage(icon_path);
+    const image = loadIconImage(icon_path, side);
     const key = std.heap.c_allocator.dupe(u8, icon_path) catch return image;
     icon_cache.put(std.heap.c_allocator, key, image) catch {
         std.heap.c_allocator.free(key);
@@ -82,12 +83,14 @@ pub fn iconImage(path: ?[:0]const u8) ?objc.Object {
     return image;
 }
 
-fn loadIconImage(path: [:0]const u8) ?objc.Object {
+fn loadIconImage(path: [:0]const u8, side: f64) ?objc.Object {
     io_compat.accessAbsolute(path, .{}) catch return null;
 
     const NSWorkspace = objc.getClass("NSWorkspace").?;
     const workspace = NSWorkspace.msgSend(objc.Object, "sharedWorkspace", .{});
     const image = workspace.msgSend(objc.Object, "iconForFile:", .{nsString(path.ptr)});
     if (image.value == null) return null;
+    const side_len = @max(side, 1.0);
+    image.msgSend(void, "setSize:", .{NSSize{ .width = side_len, .height = side_len }});
     return image.retain();
 }
