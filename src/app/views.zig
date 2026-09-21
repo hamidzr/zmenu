@@ -18,7 +18,9 @@ pub const TextCellStyle = struct {
 };
 
 /// Dequeue a reusable NSTableCellView, creating one when the reuse queue is empty.
-fn makeCellView(table_view: objc.Object, identifier: [*:0]const u8) objc.Object {
+/// The frame is seeded with the real cell size: cells created at 0x0 get their
+/// subviews re-centred by AppKit autoresizing, which pushed rows off-axis.
+fn makeCellView(table_view: objc.Object, identifier: [*:0]const u8, row_height: f64, column_width: f64) objc.Object {
     const reused = table_view.msgSend(objc.Object, "makeViewWithIdentifier:owner:", .{
         nsString(identifier),
         @as(objc.c.id, null),
@@ -29,7 +31,7 @@ fn makeCellView(table_view: objc.Object, identifier: [*:0]const u8) objc.Object 
     const cell = NSTableCellView.msgSend(objc.Object, "alloc", .{})
         .msgSend(objc.Object, "initWithFrame:", .{NSRect{
         .origin = .{ .x = 0, .y = 0 },
-        .size = .{ .width = 0, .height = 0 },
+        .size = .{ .width = column_width, .height = row_height },
     }});
     cell.msgSend(void, "setIdentifier:", .{nsString(identifier)});
     return cell;
@@ -37,7 +39,7 @@ fn makeCellView(table_view: objc.Object, identifier: [*:0]const u8) objc.Object 
 
 /// A single-label cell view. Reuses the label across dequeues.
 pub fn textCell(table_view: objc.Object, row_height: f64, column_width: f64, style: TextCellStyle) objc.Object {
-    const cell = makeCellView(table_view, style.identifier);
+    const cell = makeCellView(table_view, style.identifier, row_height, column_width);
     var label = cell.msgSend(objc.Object, "textField", .{});
     if (label.value == null) {
         label = makeLabel(row_height, column_width, style);
@@ -55,7 +57,7 @@ pub fn setCellText(cell: objc.Object, text: [*:0]const u8) void {
 
 /// An icon-only cell view. Reuses the image view across dequeues.
 pub fn iconCell(table_view: objc.Object, row_height: f64, column_width: f64, identifier: [*:0]const u8) objc.Object {
-    const cell = makeCellView(table_view, identifier);
+    const cell = makeCellView(table_view, identifier, row_height, column_width);
     var image_view = cell.msgSend(objc.Object, "imageView", .{});
     if (image_view.value == null) {
         image_view = makeImageView(row_height, column_width);
@@ -117,8 +119,9 @@ fn makeImageView(row_height: f64, column_width: f64) objc.Object {
         .size = .{ .width = side, .height = side },
     }});
     image_view.msgSend(void, "setImageScaling:", .{@as(c_ulong, 3)}); // proportionally up or down
-    // fixed size, centred both axes
-    image_view.msgSend(void, "setAutoresizingMask:", .{@as(c_ulong, 1 | 4 | 8 | 32)});
+    // fixed size; flexible horizontal margins keep it centred when the column
+    // width changes, fixed vertical margins stop AppKit re-centring it low
+    image_view.msgSend(void, "setAutoresizingMask:", .{@as(c_ulong, 1 | 4)});
     return image_view;
 }
 
