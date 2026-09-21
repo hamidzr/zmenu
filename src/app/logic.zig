@@ -43,7 +43,7 @@ pub fn updateMatchLabel(app_state: *state.AppState) void {
     var buf: [32]u8 = undefined;
     const label_z = std.fmt.bufPrintZ(
         &buf,
-        "[{d}/{d}]",
+        "{d} / {d}",
         .{ app_state.model.match_count, app_state.model.items.len },
     ) catch return;
     app_state.match_label.msgSend(void, "setStringValue:", .{objc_helpers.nsString(label_z)});
@@ -51,6 +51,8 @@ pub fn updateMatchLabel(app_state: *state.AppState) void {
 
 pub fn applyFilter(app_state: *state.AppState, query: []const u8) void {
     app_state.model.applyFilter(query, app_state.config.search);
+    // rows move under a possibly stationary pointer, so drop the stale hover
+    app_state.hovered_row = null;
     if (app_state.index_column) |index_column| {
         const enabled = app_state.config.numericSelectionEnabled(app_state.model.filtered.items.len, query);
         index_column.msgSend(void, "setHidden:", .{!enabled});

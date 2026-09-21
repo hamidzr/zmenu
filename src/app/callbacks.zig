@@ -11,6 +11,7 @@ const state = @import("state.zig");
 const views = @import("views.zig");
 
 const nsString = objc_helpers.nsString;
+const NSPoint = objc_helpers.NSPoint;
 const columnIsIndex = objc_helpers.columnIsIndex;
 const columnIsIcon = objc_helpers.columnIsIcon;
 const iconImage = objc_helpers.iconImage;
@@ -80,6 +81,38 @@ pub fn onSubmit(target: objc.c.id, sel: objc.c.SEL, sender: objc.c.id) callconv(
 
     const app_state = state.g_state orelse return;
     logic.acceptSelection(app_state);
+}
+
+/// Table-wide tracking: the row under the pointer drives the hover highlight.
+pub fn mouseMoved(target: objc.c.id, sel: objc.c.SEL, event: objc.c.id) callconv(.c) void {
+    _ = target;
+    _ = sel;
+    if (event == null) return;
+
+    const app_state = state.g_state orelse return;
+    const event_obj = objc.Object.fromId(event);
+    const window_point = event_obj.msgSend(NSPoint, "locationInWindow", .{});
+    views.refreshHoverAtWindowPoint(app_state, window_point);
+}
+
+/// Scrolling moves rows under a stationary pointer, so re-resolve the hover row.
+pub fn scrollViewBoundsChanged(target: objc.c.id, sel: objc.c.SEL, notification: objc.c.id) callconv(.c) void {
+    _ = target;
+    _ = sel;
+    _ = notification;
+
+    const app_state = state.g_state orelse return;
+    const window_point = app_state.window.msgSend(NSPoint, "mouseLocationOutsideOfEventStream", .{});
+    views.refreshHoverAtWindowPoint(app_state, window_point);
+}
+
+pub fn mouseExited(target: objc.c.id, sel: objc.c.SEL, event: objc.c.id) callconv(.c) void {
+    _ = target;
+    _ = sel;
+    _ = event;
+
+    const app_state = state.g_state orelse return;
+    views.setHoveredRow(app_state, null);
 }
 
 pub fn numberOfRowsInTableView(target: objc.c.id, sel: objc.c.SEL, table: objc.c.id) callconv(.c) c_long {

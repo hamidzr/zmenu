@@ -26,6 +26,7 @@ pub const AppState = struct {
     last_keystroke_ms: i64,
     pending_stream_close_auto_accept: bool,
     had_focus: bool,
+    hovered_row: ?usize,
 };
 
 pub const digit_labels = [_][:0]const u8{ "1", "2", "3", "4", "5", "6", "7", "8", "9" };

@@ -24,6 +24,15 @@ fn inputHandlerClass() objc.Class {
     if (!cls.addMethod("onSubmit:", callbacks.onSubmit)) {
         @panic("failed to add onSubmit: method");
     }
+    if (!cls.addMethod("mouseMoved:", callbacks.mouseMoved)) {
+        @panic("failed to add mouseMoved: method");
+    }
+    if (!cls.addMethod("mouseExited:", callbacks.mouseExited)) {
+        @panic("failed to add mouseExited: method");
+    }
+    if (!cls.addMethod("scrollViewBoundsChanged:", callbacks.scrollViewBoundsChanged)) {
+        @panic("failed to add scrollViewBoundsChanged: method");
+    }
     objc.registerClassPair(cls);
     return cls;
 }

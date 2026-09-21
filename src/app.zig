@@ -21,7 +21,7 @@ const nsColor = objc_helpers.nsColor;
 const nsFont = objc_helpers.nsFont;
 const nsFontWeight = objc_helpers.nsFontWeight;
 const lineHeight = objc_helpers.lineHeight;
-const label_optical_offset = objc_helpers.label_optical_offset;
+const baselineFromFrameBottom = objc_helpers.baselineFromFrameBottom;
 const font_weight_medium = objc_helpers.font_weight_medium;
 const applyPlaceholderColor = objc_helpers.applyPlaceholderColor;
 
@@ -90,7 +90,14 @@ pub fn run(config: appconfig.Config) !void {
     const field_height = config.field_height;
     const padding = config.padding;
     const list_width = window_width - (padding * 2.0);
-    const list_height = window_height - field_height - (padding * 3.0);
+    // snap the list to whole rows so the bottom row is never sliced mid-glyph,
+    // then shrink the window by the remainder to keep the padding even
+    var list_height = window_height - field_height - (padding * 3.0);
+    if (config.row_height > 1.0) {
+        const whole_rows = @floor(list_height / config.row_height);
+        if (whole_rows >= 1.0) list_height = whole_rows * config.row_height;
+    }
+    window_height = field_height + (padding * 3.0) + list_height;
     const numeric_width = if (config.hasNumericSelectionColumn()) config.numeric_column_width else 0;
     const icon_width = if (config.show_icons) config.icon_column_width else 0;
     var item_width = list_width - numeric_width - icon_width;
@@ -163,7 +170,7 @@ pub fn run(config: appconfig.Config) !void {
     }
 
     const search_font = nsFont(clamp(config.field_height * 0.48, 15.0, 21.0));
-    const counter_font = nsFont(clamp(config.field_height * 0.30, 11.0, 13.0));
+    const counter_font = objc_helpers.nsFontMonospacedDigit(clamp(config.field_height * 0.32, 12.0, 14.0), font_weight_medium);
     const text_color = if (config.text_color) |color| nsColor(color) else null;
     const secondary_text_color = if (config.secondary_text_color) |color| nsColor(color) else null;
 
@@ -174,18 +181,28 @@ pub fn run(config: appconfig.Config) !void {
     const search_line_height = lineHeight(search_font);
     const field_bg_rect = NSRect{
         .origin = .{ .x = padding, .y = header_center_y - field_height / 2.0 },
-        .size = .{ .width = search_width, .height = field_height },
+        .size = .{ .width = list_width, .height = field_height },
     };
     const text_inset: f64 = 10.0;
+    const counter_right_inset: f64 = 12.0;
     const field_rect = NSRect{
         .origin = .{ .x = padding + text_inset, .y = header_center_y - search_line_height / 2.0 },
         .size = .{ .width = @max(search_width - text_inset * 2.0, 0.0), .height = search_line_height },
     };
 
+    // share the search text baseline instead of centring a smaller box, which
+    // left the counter floating high and detached from the field
     const counter_height = lineHeight(counter_font);
+    const search_baseline = field_rect.origin.y + baselineFromFrameBottom(search_font);
     const match_rect = NSRect{
-        .origin = .{ .x = padding + search_width, .y = header_center_y - counter_height / 2.0 + label_optical_offset },
-        .size = .{ .width = match_label_width, .height = counter_height },
+        .origin = .{
+            .x = padding + search_width,
+            .y = search_baseline - baselineFromFrameBottom(counter_font),
+        },
+        .size = .{
+            .width = @max(match_label_width - counter_right_inset, 0.0),
+            .height = counter_height,
+        },
     };
 
     const list_rect = NSRect{
@@ -314,6 +331,27 @@ pub fn run(config: appconfig.Config) !void {
     }
     // view-based table: tableView:viewForTableColumn:row: supplies cell views and
     // tableView:rowViewForRow: supplies ZigTableRowView, which draws selection_color.
+    // A single table-wide tracking area drives the hover highlight; the owner
+    // handler receives mouseMoved:/mouseExited: for the whole list.
+    const NSTrackingArea = objc.getClass("NSTrackingArea").?;
+    const tracking_area = NSTrackingArea.msgSend(objc.Object, "alloc", .{})
+        .msgSend(objc.Object, "initWithRect:options:owner:userInfo:", .{
+        NSRect{ .origin = .{ .x = 0, .y = 0 }, .size = .{ .width = 0, .height = 0 } },
+        @as(c_ulong, 0x223), // entered|exited|moved, active in key window, in visible rect
+        handler,
+        @as(objc.c.id, null),
+    });
+    table_view.msgSend(void, "addTrackingArea:", .{tracking_area});
+
+    // scrolling shifts rows under a stationary pointer, so re-resolve the hover row
+    const NSNotificationCenter = objc.getClass("NSNotificationCenter").?;
+    const notification_center = NSNotificationCenter.msgSend(objc.Object, "defaultCenter", .{});
+    notification_center.msgSend(void, "addObserver:selector:name:object:", .{
+        handler,
+        objc.sel("scrollViewBoundsChanged:"),
+        nsString("NSViewBoundsDidChangeNotification"),
+        scroll_view.msgSend(objc.Object, "contentView", .{}),
+    });
 
     content_view.msgSend(void, "addSubview:", .{scroll_view});
     if (config.field_background_color) |color| {
@@ -356,6 +394,7 @@ pub fn run(config: appconfig.Config) !void {
         .last_keystroke_ms = 0,
         .pending_stream_close_auto_accept = false,
         .had_focus = false,
+        .hovered_row = null,
     };
     defer app_state.model.deinit(allocator);
     state.g_state = &app_state;
@@ -403,6 +442,7 @@ pub fn run(config: appconfig.Config) !void {
     }
 
     app.msgSend(void, "activateIgnoringOtherApps:", .{true});
+    window.msgSend(void, "setAcceptsMouseMovedEvents:", .{true});
     window.msgSend(void, "makeKeyAndOrderFront:", .{@as(objc.c.id, null)});
     if (config.render_bench) {
         io_compat.stderrPrint("render-bench launch_ms={d:.3}\n", .{time_compat.sinceProcessStartMs()}) catch {};

@@ -49,6 +49,12 @@ pub fn nsFontWeight(size: f64, weight: f64) objc.Object {
     return NSFont.msgSend(objc.Object, "systemFontOfSize:weight:", .{ size, weight });
 }
 
+/// System font with tabular digits, so a changing counter does not jitter.
+pub fn nsFontMonospacedDigit(size: f64, weight: f64) objc.Object {
+    const NSFont = objc.getClass("NSFont").?;
+    return NSFont.msgSend(objc.Object, "monospacedDigitSystemFontOfSize:weight:", .{ size, weight });
+}
+
 /// Full line box height for a font, used to size and centre single-line labels.
 pub fn lineHeight(font: objc.Object) f64 {
     const ascender = font.msgSend(f64, "ascender", .{});
@@ -56,6 +62,13 @@ pub fn lineHeight(font: objc.Object) f64 {
     const leading = font.msgSend(f64, "leading", .{});
     const height = ascender - descender + leading;
     return if (height > 1.0) height else 16.0;
+}
+
+/// Distance from a label frame's bottom edge to its text baseline, so labels of
+/// different sizes can share a baseline instead of a centre line.
+pub fn baselineFromFrameBottom(font: objc.Object) f64 {
+    const ascender = font.msgSend(f64, "ascender", .{});
+    return lineHeight(font) - ascender;
 }
 
 /// NSTextFieldCell leaves a small top inset, so single-line labels land a touch
