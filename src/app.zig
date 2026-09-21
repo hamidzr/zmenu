@@ -20,6 +20,8 @@ const nsString = objc_helpers.nsString;
 const nsColor = objc_helpers.nsColor;
 const nsFont = objc_helpers.nsFont;
 const nsFontWeight = objc_helpers.nsFontWeight;
+const lineHeight = objc_helpers.lineHeight;
+const label_optical_offset = objc_helpers.label_optical_offset;
 const font_weight_medium = objc_helpers.font_weight_medium;
 const applyPlaceholderColor = objc_helpers.applyPlaceholderColor;
 
@@ -160,14 +162,30 @@ pub fn run(config: appconfig.Config) !void {
         match_label_width = 0;
     }
 
-    const field_rect = NSRect{
-        .origin = .{ .x = padding, .y = window_height - padding - field_height },
+    const search_font = nsFont(clamp(config.field_height * 0.48, 15.0, 21.0));
+    const counter_font = nsFont(clamp(config.field_height * 0.30, 11.0, 13.0));
+    const text_color = if (config.text_color) |color| nsColor(color) else null;
+    const secondary_text_color = if (config.secondary_text_color) |color| nsColor(color) else null;
+
+    // NSTextField does not vertically centre single-line text in a taller frame, so
+    // the field is sized to one line and centred; a separate rounded view provides
+    // the taller visible background.
+    const header_center_y = window_height - padding - field_height / 2.0;
+    const search_line_height = lineHeight(search_font);
+    const field_bg_rect = NSRect{
+        .origin = .{ .x = padding, .y = header_center_y - field_height / 2.0 },
         .size = .{ .width = search_width, .height = field_height },
     };
+    const text_inset: f64 = 10.0;
+    const field_rect = NSRect{
+        .origin = .{ .x = padding + text_inset, .y = header_center_y - search_line_height / 2.0 },
+        .size = .{ .width = @max(search_width - text_inset * 2.0, 0.0), .height = search_line_height },
+    };
 
+    const counter_height = lineHeight(counter_font);
     const match_rect = NSRect{
-        .origin = .{ .x = padding + search_width, .y = window_height - padding - field_height },
-        .size = .{ .width = match_label_width, .height = field_height },
+        .origin = .{ .x = padding + search_width, .y = header_center_y - counter_height / 2.0 + label_optical_offset },
+        .size = .{ .width = match_label_width, .height = counter_height },
     };
 
     const list_rect = NSRect{
@@ -175,18 +193,13 @@ pub fn run(config: appconfig.Config) !void {
         .size = .{ .width = list_width, .height = list_height },
     };
 
-    const search_font = nsFont(clamp(config.field_height * 0.48, 15.0, 21.0));
-    const counter_font = nsFont(clamp(config.field_height * 0.30, 11.0, 13.0));
-    const text_color = if (config.text_color) |color| nsColor(color) else null;
-    const secondary_text_color = if (config.secondary_text_color) |color| nsColor(color) else null;
-
     const SearchField = classes.searchFieldClass();
     const text_field = SearchField.msgSend(objc.Object, "alloc", .{})
         .msgSend(objc.Object, "initWithFrame:", .{field_rect});
 
     text_field.msgSend(void, "setEditable:", .{true});
     text_field.msgSend(void, "setSelectable:", .{true});
-    text_field.msgSend(void, "setBezeled:", .{true});
+    text_field.msgSend(void, "setBezeled:", .{false});
     text_field.msgSend(void, "setBordered:", .{false});
     text_field.msgSend(void, "setFocusRingType:", .{@as(c_uint, 1)}); // NSFocusRingTypeNone = 1
     text_field.msgSend(void, "setAlignment:", .{@as(c_ulong, 0)}); // NSTextAlignmentLeft
@@ -200,10 +213,7 @@ pub fn run(config: appconfig.Config) !void {
         text_field.msgSend(void, "setTextColor:", .{color});
     }
     text_field.msgSend(void, "setFont:", .{search_font});
-    if (config.field_background_color) |color| {
-        text_field.msgSend(void, "setDrawsBackground:", .{true});
-        text_field.msgSend(void, "setBackgroundColor:", .{nsColor(color)});
-    }
+    text_field.msgSend(void, "setDrawsBackground:", .{false});
 
     // Set placeholder with custom color - must be done after setting bezeled/bordered
     if (secondary_text_color) |color| {
@@ -306,6 +316,16 @@ pub fn run(config: appconfig.Config) !void {
     // tableView:rowViewForRow: supplies ZigTableRowView, which draws selection_color.
 
     content_view.msgSend(void, "addSubview:", .{scroll_view});
+    if (config.field_background_color) |color| {
+        const NSView = objc.getClass("NSView").?;
+        const field_bg = NSView.msgSend(objc.Object, "alloc", .{})
+            .msgSend(objc.Object, "initWithFrame:", .{field_bg_rect});
+        field_bg.msgSend(void, "setWantsLayer:", .{true});
+        const bg_layer = field_bg.msgSend(objc.Object, "layer", .{});
+        bg_layer.msgSend(void, "setBackgroundColor:", .{nsColor(color).msgSend(objc.c.id, "CGColor", .{})});
+        bg_layer.msgSend(void, "setCornerRadius:", .{@as(f64, 8.0)});
+        content_view.msgSend(void, "addSubview:", .{field_bg});
+    }
     content_view.msgSend(void, "addSubview:", .{text_field});
     if (match_label_width > 0) {
         content_view.msgSend(void, "addSubview:", .{match_label});

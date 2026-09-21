@@ -5,6 +5,8 @@ const state = @import("state.zig");
 const NSRect = objc_helpers.NSRect;
 const nsString = objc_helpers.nsString;
 const nsColor = objc_helpers.nsColor;
+const lineHeight = objc_helpers.lineHeight;
+const label_optical_offset = objc_helpers.label_optical_offset;
 
 pub const TextCellStyle = struct {
     identifier: [*:0]const u8,
@@ -74,7 +76,9 @@ fn makeLabel(row_height: f64, column_width: f64, style: TextCellStyle) objc.Obje
     const NSTextField = objc.getClass("NSTextField").?;
     const line_height = lineHeight(style.font);
     const width = @max(column_width - style.left_pad - style.right_pad, 0.0);
-    const y = @max((row_height - line_height) / 2.0, 0.0);
+    // NSTextFieldCell adds a small top inset, so shift up slightly to land glyphs
+    // on the row's vertical axis.
+    const y = (row_height - line_height) / 2.0 + label_optical_offset;
 
     const label = NSTextField.msgSend(objc.Object, "alloc", .{})
         .msgSend(objc.Object, "initWithFrame:", .{NSRect{
@@ -92,8 +96,8 @@ fn makeLabel(row_height: f64, column_width: f64, style: TextCellStyle) objc.Obje
         label.msgSend(void, "setTextColor:", .{color});
     }
     label.msgSend(void, "setLineBreakMode:", .{@as(c_ulong, 2)}); // truncating tail
-    // width flexible, vertically centred
-    label.msgSend(void, "setAutoresizingMask:", .{@as(c_ulong, 2 | 8 | 32)});
+    // width flexible, height fixed
+    label.msgSend(void, "setAutoresizingMask:", .{@as(c_ulong, 2)});
     return label;
 }
 
@@ -116,14 +120,6 @@ fn makeImageView(row_height: f64, column_width: f64) objc.Object {
     // fixed size, centred both axes
     image_view.msgSend(void, "setAutoresizingMask:", .{@as(c_ulong, 1 | 4 | 8 | 32)});
     return image_view;
-}
-
-fn lineHeight(font: objc.Object) f64 {
-    const ascender = font.msgSend(f64, "ascender", .{});
-    const descender = font.msgSend(f64, "descender", .{});
-    const leading = font.msgSend(f64, "leading", .{});
-    const height = ascender - descender + leading;
-    return if (height > 1.0) height else 16.0;
 }
 
 /// Custom NSTableRowView drawing, so `selection_color` applies. When no color is

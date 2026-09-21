@@ -49,6 +49,20 @@ pub fn nsFontWeight(size: f64, weight: f64) objc.Object {
     return NSFont.msgSend(objc.Object, "systemFontOfSize:weight:", .{ size, weight });
 }
 
+/// Full line box height for a font, used to size and centre single-line labels.
+pub fn lineHeight(font: objc.Object) f64 {
+    const ascender = font.msgSend(f64, "ascender", .{});
+    const descender = font.msgSend(f64, "descender", .{});
+    const leading = font.msgSend(f64, "leading", .{});
+    const height = ascender - descender + leading;
+    return if (height > 1.0) height else 16.0;
+}
+
+/// NSTextFieldCell leaves a small top inset, so single-line labels land a touch
+/// below their frame centre. Nudge frames up by this much to keep glyphs optically
+/// centred on the row or header axis.
+pub const label_optical_offset: f64 = 1.25;
+
 pub fn applyPlaceholderColor(field: objc.Object, placeholder: [*:0]const u8, color: objc.Object) void {
     const NSDictionary = objc.getClass("NSDictionary").?;
     const NSAttributedString = objc.getClass("NSAttributedString").?;
