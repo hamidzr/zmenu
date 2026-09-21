@@ -38,6 +38,17 @@ pub fn nsFont(size: f64) objc.Object {
     return NSFont.msgSend(objc.Object, "systemFontOfSize:", .{size});
 }
 
+// NSFontWeight values from AppKit. Exposed as plain f64 so callers do not need
+// to know the enum.
+pub const font_weight_regular: f64 = 0.0;
+pub const font_weight_medium: f64 = 0.23;
+pub const font_weight_semibold: f64 = 0.30;
+
+pub fn nsFontWeight(size: f64, weight: f64) objc.Object {
+    const NSFont = objc.getClass("NSFont").?;
+    return NSFont.msgSend(objc.Object, "systemFontOfSize:weight:", .{ size, weight });
+}
+
 pub fn applyPlaceholderColor(field: objc.Object, placeholder: [*:0]const u8, color: objc.Object) void {
     const NSDictionary = objc.getClass("NSDictionary").?;
     const NSAttributedString = objc.getClass("NSAttributedString").?;

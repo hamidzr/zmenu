@@ -98,7 +98,7 @@ fn makeLabel(row_height: f64, column_width: f64, style: TextCellStyle) objc.Obje
 }
 
 pub fn iconSide(row_height: f64, column_width: f64) f64 {
-    return @max(@min(column_width, row_height) * 0.7, 12.0);
+    return @max(@min(column_width, row_height) * 0.8, 12.0);
 }
 
 fn makeImageView(row_height: f64, column_width: f64) objc.Object {
@@ -130,18 +130,18 @@ fn lineHeight(font: objc.Object) f64 {
 /// configured it falls back to the system selection highlight.
 pub fn rowViewDrawSelectionInRect(target: objc.c.id, sel: objc.c.SEL, dirty_rect: NSRect) callconv(.c) void {
     _ = sel;
+    if (paintSelection(dirty_rect)) return;
+    drawSystemSelection(target, dirty_rect);
+}
 
-    const app_state = state.g_state orelse {
-        drawSystemSelection(target, dirty_rect);
-        return;
-    };
-    const color = app_state.config.selection_color orelse {
-        drawSystemSelection(target, dirty_rect);
-        return;
-    };
+/// Draws the configured rounded selection fill. Returns false when there is no
+/// color to paint, so callers can fall back to AppKit.
+fn paintSelection(dirty_rect: NSRect) bool {
+    const app_state = state.g_state orelse return false;
+    const color = app_state.config.selection_color orelse return false;
 
-    const inset_x: f64 = 2.0;
-    const inset_y: f64 = 1.0;
+    const inset_x: f64 = 4.0;
+    const inset_y: f64 = 2.0;
     const rect = NSRect{
         .origin = .{ .x = dirty_rect.origin.x + inset_x, .y = dirty_rect.origin.y + inset_y },
         .size = .{
@@ -149,17 +149,18 @@ pub fn rowViewDrawSelectionInRect(target: objc.c.id, sel: objc.c.SEL, dirty_rect
             .height = @max(dirty_rect.size.height - inset_y * 2.0, 0.0),
         },
     };
-    if (rect.size.width <= 0.0 or rect.size.height <= 0.0) return;
+    if (rect.size.width <= 0.0 or rect.size.height <= 0.0) return false;
 
     nsColor(color).msgSend(void, "setFill", .{});
     const NSBezierPath = objc.getClass("NSBezierPath").?;
-    const radius: f64 = 6.0;
+    const radius: f64 = 8.0;
     const path = NSBezierPath.msgSend(objc.Object, "bezierPathWithRoundedRect:xRadius:yRadius:", .{
         rect,
         radius,
         radius,
     });
     path.msgSend(void, "fill", .{});
+    return true;
 }
 
 fn drawSystemSelection(target: objc.c.id, dirty_rect: NSRect) void {

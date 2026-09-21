@@ -19,6 +19,8 @@ const NSRect = objc_helpers.NSRect;
 const nsString = objc_helpers.nsString;
 const nsColor = objc_helpers.nsColor;
 const nsFont = objc_helpers.nsFont;
+const nsFontWeight = objc_helpers.nsFontWeight;
+const font_weight_medium = objc_helpers.font_weight_medium;
 const applyPlaceholderColor = objc_helpers.applyPlaceholderColor;
 
 const startUpdateQueue = updates.startUpdateQueue;
@@ -27,6 +29,10 @@ const followStdinThread = updates.followStdinThread;
 const NSApplicationActivationPolicyRegular: i64 = 0;
 const NSWindowStyleMaskBorderless: u64 = 0;
 const NSBackingStoreBuffered: u64 = 2;
+
+fn clamp(value: f64, lo: f64, hi: f64) f64 {
+    return @min(@max(value, lo), hi);
+}
 
 pub fn run(config: appconfig.Config) !void {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
@@ -169,8 +175,8 @@ pub fn run(config: appconfig.Config) !void {
         .size = .{ .width = list_width, .height = list_height },
     };
 
-    const font_size = @max(config.field_height * 0.65, 15.0);
-    const text_font = nsFont(font_size);
+    const search_font = nsFont(clamp(config.field_height * 0.48, 15.0, 21.0));
+    const counter_font = nsFont(clamp(config.field_height * 0.30, 11.0, 13.0));
     const text_color = if (config.text_color) |color| nsColor(color) else null;
     const secondary_text_color = if (config.secondary_text_color) |color| nsColor(color) else null;
 
@@ -193,7 +199,7 @@ pub fn run(config: appconfig.Config) !void {
     if (text_color) |color| {
         text_field.msgSend(void, "setTextColor:", .{color});
     }
-    text_field.msgSend(void, "setFont:", .{text_font});
+    text_field.msgSend(void, "setFont:", .{search_font});
     if (config.field_background_color) |color| {
         text_field.msgSend(void, "setDrawsBackground:", .{true});
         text_field.msgSend(void, "setBackgroundColor:", .{nsColor(color)});
@@ -222,7 +228,7 @@ pub fn run(config: appconfig.Config) !void {
     if (secondary_text_color) |color| {
         match_label.msgSend(void, "setTextColor:", .{color});
     }
-    match_label.msgSend(void, "setFont:", .{text_font});
+    match_label.msgSend(void, "setFont:", .{counter_font});
 
     const table_frame = NSRect{
         .origin = .{ .x = 0, .y = 0 },
@@ -233,14 +239,14 @@ pub fn run(config: appconfig.Config) !void {
     const table_view = NSTableView.msgSend(objc.Object, "alloc", .{})
         .msgSend(objc.Object, "initWithFrame:", .{table_frame});
 
-    const table_font = nsFont(@max(config.row_height * 0.6, 14.0));
+    const table_font = nsFontWeight(clamp(config.row_height * 0.46, 13.0, 16.0), font_weight_medium);
 
     table_view.msgSend(void, "setHeaderView:", .{@as(objc.c.id, null)});
     table_view.msgSend(void, "setAllowsMultipleSelection:", .{false});
     table_view.msgSend(void, "setAllowsEmptySelection:", .{true});
     table_view.msgSend(void, "setRowHeight:", .{config.row_height});
     table_view.msgSend(void, "setUsesAlternatingRowBackgroundColors:", .{config.alternate_rows});
-    table_view.msgSend(void, "setSelectionHighlightStyle:", .{@as(c_long, 1)}); // NSTableViewSelectionHighlightStyleRegular
+    table_view.msgSend(void, "setSelectionHighlightStyle:", .{@as(c_long, 0)}); // NSTableViewSelectionHighlightStyleRegular
     table_view.msgSend(void, "setTarget:", .{handler});
     table_view.msgSend(void, "setDoubleAction:", .{objc.sel("onSubmit:")});
     table_view.msgSend(void, "setIntercellSpacing:", .{NSSize{ .width = 0, .height = 0 }});
@@ -318,6 +324,7 @@ pub fn run(config: appconfig.Config) !void {
         .match_label = match_label,
         .handler = handler,
         .row_font = table_font,
+        .counter_font = counter_font,
         .item_text_color = text_color,
         .index_text_color = secondary_text_color,
         .config = config,

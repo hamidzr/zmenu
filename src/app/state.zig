@@ -14,6 +14,7 @@ pub const AppState = struct {
     match_label: objc.Object,
     handler: objc.Object,
     row_font: objc.Object,
+    counter_font: objc.Object,
     item_text_color: ?objc.Object,
     index_text_color: ?objc.Object,
     config: appconfig.Config,
