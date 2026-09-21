@@ -21,7 +21,6 @@ const nsColor = objc_helpers.nsColor;
 const nsFont = objc_helpers.nsFont;
 const nsFontWeight = objc_helpers.nsFontWeight;
 const lineHeight = objc_helpers.lineHeight;
-const baselineFromFrameBottom = objc_helpers.baselineFromFrameBottom;
 const font_weight_medium = objc_helpers.font_weight_medium;
 const applyPlaceholderColor = objc_helpers.applyPlaceholderColor;
 
@@ -190,14 +189,13 @@ pub fn run(config: appconfig.Config) !void {
         .size = .{ .width = @max(search_width - text_inset * 2.0, 0.0), .height = search_line_height },
     };
 
-    // share the search text baseline instead of centring a smaller box, which
-    // left the counter floating high and detached from the field
+    // each label is centred on its own line box; baseline-aligning the smaller
+    // counter to the search baseline pushed it visibly below the field centre
     const counter_height = lineHeight(counter_font);
-    const search_baseline = field_rect.origin.y + baselineFromFrameBottom(search_font);
     const match_rect = NSRect{
         .origin = .{
             .x = padding + search_width,
-            .y = search_baseline - baselineFromFrameBottom(counter_font),
+            .y = header_center_y - counter_height / 2.0,
         },
         .size = .{
             .width = @max(match_label_width - counter_right_inset, 0.0),
@@ -234,7 +232,7 @@ pub fn run(config: appconfig.Config) !void {
 
     // Set placeholder with custom color - must be done after setting bezeled/bordered
     if (secondary_text_color) |color| {
-        applyPlaceholderColor(text_field, config.placeholder, color);
+        applyPlaceholderColor(text_field, config.placeholder, color, search_font);
     } else {
         text_field.msgSend(void, "setPlaceholderString:", .{nsString(config.placeholder)});
     }

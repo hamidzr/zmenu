@@ -64,25 +64,26 @@ pub fn lineHeight(font: objc.Object) f64 {
     return if (height > 1.0) height else 16.0;
 }
 
-/// Distance from a label frame's bottom edge to its text baseline, so labels of
-/// different sizes can share a baseline instead of a centre line.
-pub fn baselineFromFrameBottom(font: objc.Object) f64 {
-    const ascender = font.msgSend(f64, "ascender", .{});
-    return lineHeight(font) - ascender;
-}
-
 /// NSTextFieldCell leaves a small top inset, so single-line labels land a touch
 /// below their frame centre. Nudge frames up by this much to keep glyphs optically
 /// centred on the row or header axis.
 pub const label_optical_offset: f64 = 1.25;
 
-pub fn applyPlaceholderColor(field: objc.Object, placeholder: [*:0]const u8, color: objc.Object) void {
-    const NSDictionary = objc.getClass("NSDictionary").?;
+pub fn applyPlaceholderColor(
+    field: objc.Object,
+    placeholder: [*:0]const u8,
+    color: objc.Object,
+    font: objc.Object,
+) void {
+    const NSMutableDictionary = objc.getClass("NSMutableDictionary").?;
     const NSAttributedString = objc.getClass("NSAttributedString").?;
-    const key = nsString("NSColor");
-    const value = NSDictionary.msgSend(objc.Object, "dictionaryWithObject:forKey:", .{ color, key });
+    // include the font: a color-only attributed placeholder falls back to the
+    // cell default (13pt) and renders smaller than the field text
+    const attributes = NSMutableDictionary.msgSend(objc.Object, "dictionary", .{});
+    attributes.msgSend(void, "setObject:forKey:", .{ color, nsString("NSColor") });
+    attributes.msgSend(void, "setObject:forKey:", .{ font, nsString("NSFont") });
     const attributed = NSAttributedString.msgSend(objc.Object, "alloc", .{})
-        .msgSend(objc.Object, "initWithString:attributes:", .{ nsString(placeholder), value });
+        .msgSend(objc.Object, "initWithString:attributes:", .{ nsString(placeholder), attributes });
     field.msgSend(void, "setPlaceholderAttributedString:", .{attributed});
 }
 
