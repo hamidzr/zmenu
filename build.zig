@@ -62,4 +62,14 @@ pub fn build(b: *std.Build) void {
 
     const test_step = b.step("test", "Run tests");
     test_step.dependOn(&run_search_tests.step);
+    const update_tests = b.addTest(.{
+        .name = "updates",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/updates_test.zig"),
+            .target = target,
+            .optimize = optimize,
+            .link_libc = true,
+        }),
+    });
+    test_step.dependOn(&b.addRunArtifact(update_tests).step);
 }

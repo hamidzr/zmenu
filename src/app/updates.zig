@@ -43,6 +43,17 @@ pub const UpdateQueue = struct {
         self.push(kind, source, line, batch);
     }
 
+    pub fn pushBatchOwned(self: *UpdateQueue, batch: []const ItemUpdate) void {
+        if (batch.len == 0) return;
+        self.mutex.lockUncancelable(io_compat.globalIo());
+        defer self.mutex.unlock(io_compat.globalIo());
+        self.items.appendSlice(self.allocator, batch) catch {
+            for (batch) |update| {
+                if (update.line) |line| self.allocator.free(line);
+            }
+        };
+    }
+
     pub fn pushSignal(self: *UpdateQueue, kind: UpdateKind, source: UpdateSource, batch: u64) void {
         self.push(kind, source, null, batch);
     }
@@ -277,6 +288,8 @@ fn handleIpcPayload(queue: *UpdateQueue, payload: []const u8) void {
     const items = parsed.value.items orelse return;
 
     const batch_id = queue.nextBatchId();
+    var batch = std.ArrayList(ItemUpdate).empty;
+    defer batch.deinit(queue.allocator);
     for (items) |item| {
         const label = std.mem.trim(u8, item.label, " \t\r\n");
         if (label.len == 0) continue;
@@ -285,8 +298,11 @@ fn handleIpcPayload(queue: *UpdateQueue, payload: []const u8) void {
         defer json_out.deinit();
         std.json.Stringify.value(item, .{}, &json_out.writer) catch continue;
         const payload_copy = queue.allocator.dupe(u8, json_out.written()) catch continue;
-        queue.pushOwned(kind, .ipc, payload_copy, batch_id);
+        batch.append(queue.allocator, .{ .kind = kind, .source = .ipc, .line = payload_copy, .batch = batch_id }) catch {
+            queue.allocator.free(payload_copy);
+        };
     }
+    queue.pushBatchOwned(batch.items);
 }
 
 fn updateKindFromCommand(command: []const u8) ?UpdateKind {
