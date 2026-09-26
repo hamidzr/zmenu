@@ -342,8 +342,9 @@ pub fn onUpdateTimer(target: objc.c.id, sel: objc.c.SEL, timer: objc.c.id) callc
     }
     queue.allocator.free(updates_slice);
 
-    const has_item_updates = set_items.items.len > 0 or prepend_items.items.len > 0 or append_items.items.len > 0;
-    if (has_item_updates and set_items.items.len > 0) {
+    const has_set = latest_set_batch != null;
+    const has_item_updates = has_set or prepend_items.items.len > 0 or append_items.items.len > 0;
+    if (has_set) {
         app_state.model.setItems(app_state.allocator, set_items.items) catch return;
     }
     if (has_item_updates and prepend_items.items.len > 0) {

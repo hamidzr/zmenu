@@ -48,22 +48,24 @@ pub fn main(init: std.process.Init) !void {
         return usage();
     }
 
+    const item_args = args[cmd_index.? + 1 ..];
+    for (item_args) |arg| {
+        if (std.mem.eql(u8, arg, "--stdin")) read_stdin = true;
+    }
+
     var items = std.ArrayList(ipc.Item).empty;
     defer items.deinit(allocator);
 
     if (read_stdin) {
         try readItemsFromStdin(allocator, &items);
     } else {
-        const start = cmd_index.? + 1;
-        if (start < args.len) {
-            for (args[start..]) |arg| {
-                if (arg.len == 0) continue;
-                try items.append(allocator, .{ .id = arg, .label = arg });
-            }
+        for (item_args) |arg| {
+            if (arg.len == 0) continue;
+            try items.append(allocator, .{ .id = arg, .label = arg });
         }
     }
 
-    if (items.items.len == 0) {
+    if (items.items.len == 0 and !std.ascii.eqlIgnoreCase(cmd, "set")) {
         io_compat.stderrPrint("zmenuctl: no items provided\n", .{}) catch {};
         std.process.exit(1);
     }

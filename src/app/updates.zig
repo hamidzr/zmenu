@@ -5,6 +5,7 @@ const io_compat = @import("../io_compat.zig");
 const menu = @import("../menu.zig");
 
 const ipc_max_payload: usize = 1024 * 1024;
+const stdin_max_line_bytes: usize = 64 * 1024;
 
 pub const UpdateKind = enum {
     append,
@@ -143,22 +144,33 @@ pub fn startUpdateQueue(config: appconfig.Config) !QueueState {
 pub fn followStdinThread(queue: *UpdateQueue) void {
     var pending = std.ArrayList(u8).empty;
     defer pending.deinit(queue.allocator);
+    defer queue.pushSignal(.stream_closed, .stdin, 0);
 
     var buf: [4096]u8 = undefined;
+    var discarding = false;
     while (true) {
         const n = std.posix.read(std.posix.STDIN_FILENO, &buf) catch return;
         if (n == 0) break;
-        for (buf[0..n]) |byte| {
-            if (byte == '\n') {
-                flushPendingStdinLine(queue, &pending);
-                continue;
+        processStdinChunk(queue, &pending, &discarding, buf[0..n]) catch return;
+    }
+    if (!discarding) flushPendingStdinLine(queue, &pending);
+}
+
+fn processStdinChunk(queue: *UpdateQueue, pending: *std.ArrayList(u8), discarding: *bool, chunk: []const u8) !void {
+    for (chunk) |byte| {
+        if (byte == '\n') {
+            if (!discarding.*) flushPendingStdinLine(queue, pending);
+            pending.clearRetainingCapacity();
+            discarding.* = false;
+        } else if (!discarding.*) {
+            if (pending.items.len == stdin_max_line_bytes) {
+                pending.clearRetainingCapacity();
+                discarding.* = true;
+            } else {
+                try pending.append(queue.allocator, byte);
             }
-            if (pending.items.len >= 64 * 1024) return;
-            pending.append(queue.allocator, byte) catch return;
         }
     }
-    flushPendingStdinLine(queue, &pending);
-    queue.pushSignal(.stream_closed, .stdin, 0);
 }
 
 fn flushPendingStdinLine(queue: *UpdateQueue, pending: *std.ArrayList(u8)) void {
@@ -302,7 +314,52 @@ fn handleIpcPayload(queue: *UpdateQueue, payload: []const u8) void {
             queue.allocator.free(payload_copy);
         };
     }
+    if (kind == .set and batch.items.len == 0) {
+        queue.pushSignal(.set, .ipc, batch_id);
+        return;
+    }
     queue.pushBatchOwned(batch.items);
+}
+
+test "oversized stdin line is skipped and later lines survive" {
+    const allocator = std.testing.allocator;
+    var queue = UpdateQueue.init(allocator);
+    defer {
+        queue.reset();
+        queue.items.deinit(allocator);
+    }
+    var pending = std.ArrayList(u8).empty;
+    defer pending.deinit(allocator);
+    var discarding = false;
+
+    const oversized = try allocator.alloc(u8, stdin_max_line_bytes + 1);
+    defer allocator.free(oversized);
+    @memset(oversized, 'x');
+    try processStdinChunk(&queue, &pending, &discarding, oversized);
+    try processStdinChunk(&queue, &pending, &discarding, "\nvalid\n");
+
+    const drained = queue.drain();
+    defer {
+        for (drained) |update| if (update.line) |line| allocator.free(line);
+        allocator.free(drained);
+    }
+    try std.testing.expectEqual(@as(usize, 1), drained.len);
+    try std.testing.expectEqualStrings("valid", drained[0].line.?);
+}
+
+test "empty IPC set enqueues a clear signal" {
+    const allocator = std.testing.allocator;
+    var queue = UpdateQueue.init(allocator);
+    defer {
+        queue.reset();
+        queue.items.deinit(allocator);
+    }
+    handleIpcPayload(&queue, "{\"v\":2,\"cmd\":\"set\",\"items\":[]}");
+    const drained = queue.drain();
+    defer allocator.free(drained);
+    try std.testing.expectEqual(@as(usize, 1), drained.len);
+    try std.testing.expectEqual(UpdateKind.set, drained[0].kind);
+    try std.testing.expect(drained[0].line == null);
 }
 
 fn updateKindFromCommand(command: []const u8) ?UpdateKind {

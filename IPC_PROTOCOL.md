@@ -70,6 +70,7 @@ Using `zmenuctl`:
 ```bash
 printf "alpha\nbravo\n" | zmenuctl --menu-id demo set --stdin
 zmenuctl --menu-id demo append "charlie"
+zmenuctl --menu-id demo set # clear all items
 ```
 
 Or raw protocol:
