@@ -42,6 +42,10 @@ bench:
 render-bench:
 	scripts/render_bench.sh
 
+# measure external launch timing and real early keyboard delivery
+startup-bench:
+	scripts/startup_bench.sh
+
 install: build
 	mkdir -p ~/.local/bin
 	rm -f ~/.local/bin/zmenu ~/.local/bin/zmenuctl

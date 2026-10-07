@@ -20,6 +20,9 @@ var first_input_recorded: bool = false;
 
 pub fn enableStartupProfile(enabled: bool) void {
     startup_profile = enabled;
+    if (enabled) {
+        io_compat.stderrPrint("startup-profile process_start_ns={d}\n", .{process_start_ns}) catch {};
+    }
 }
 
 // timestamps only: never log query text or menu contents
