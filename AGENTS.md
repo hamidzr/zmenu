@@ -1,35 +1,68 @@
 # Repository Guidelines
 
+## Project Overview & Requirements
+
+- zmenu is a native macOS AppKit menu selector replacing Go gmenu. It reads items from stdin or IPC and prints the accepted selection to stdout.
+- Requires macOS, Zig 0.17.0, and Xcode Command Line Tools for Apple SDK headers.
+- Objective-C bindings come from the immutable `zig-objc` fork revision in `build.zig.zon`; AppKit and Foundation are system frameworks.
+
 ## Project Structure & Module Organization
-- `src/main.zig` is the entry point; keep app logic close to the UI scaffolding until the module grows.
+
+- `src/main.zig` parses configuration and dispatches to GUI or terminal mode; `src/zmenuctl.zig` is the IPC client entry point.
+- `src/app.zig` orchestrates AppKit setup. `src/app/` separates state, Objective-C classes/callbacks, views, filtering/selection logic, helpers, and streamed updates.
+- `src/terminal.zig` provides minimal interactive terminal mode, accepting the first case-insensitive substring match on Enter.
+- `src/cli.zig` and `src/cli/` handle arguments, environment variables, config files, and path resolution; `src/config.zig` defines settings and defaults.
+- `src/menu.zig` owns menu items and the model; `src/search.zig` and `src/search/` implement matching and scoring.
+- `src/ipc.zig` defines IPC messages and socket paths; `src/app/updates.zig` queues stdin/IPC updates for the GUI thread using `std.Io.Mutex`.
+- `src/cache.zig` persists query/selection state; `src/pid.zig` enforces a single instance per menu ID.
+- `src/io_compat.zig` and `src/time_compat.zig` centralize I/O and clock helpers.
 - `build.zig` and `build.zig.zon` define the Zig build configuration and dependencies.
 - `justfile` provides shorthand commands for common workflows.
 - Build artifacts land in `zig-out/` with cache data in `.zig-cache/`.
-- `README.md` documents runtime expectations and platform requirements.
+- `README.md` documents runtime behavior and CLI options; `IPC_PROTOCOL.md` defines framing and item schema.
 
 ## Build, Test, and Development Commands
-- `zig build`: compile the app with the settings in `build.zig`.
-- `zig build run`: build and launch the macOS AppKit proof of concept.
-- `just build`: alias for `zig build`.
-- `just run`: alias for `zig build run`.
+
+- `zig build` / `just build`: build both `zmenu` and `zmenuctl` into `zig-out/bin/`.
+- `zig build run` / `just run`: build and launch the GUI; supply newline-separated stdin unless using `--ipc-only`.
+- `just dev`: launch with sample stdin items.
+- `zig build test` / `just test`: run search and streamed-update tests.
+- `just fmt`: format `src/` with Zig; `just check`: check source formatting and run tests.
+- `just install`: build and copy both binaries to `~/.local/bin/`. Run after rebuilding to refresh installed copies.
+- `just visual`: capture/compare a UI snapshot; `UPDATE_SNAPSHOT=1` refreshes the baseline.
+- `just bench`, `just render-bench`, and `just startup-bench`: process, rendering, and external-launch keyboard benchmarks respectively.
 - `just clean`: remove `zig-out/`, `.zig-cache/`, and `bin/`.
-- `just zip`: package the repo into `../zmenu.zip`.
 
 ## Coding Style & Naming Conventions
-- Use Zig standard formatting (`zig fmt src/*.zig`) and 4-space indentation.
+
+- Use Zig standard formatting (`zig fmt src/`) and 4-space indentation; format build files when changing them.
 - Prefer `camelCase` for locals and functions, `PascalCase` for types, and `SCREAMING_SNAKE_CASE` for constants.
 - Keep functions small and focused; avoid large monolithic `main` blocks as features expand.
+- Preserve allocator ownership across menu items and update queues. Main/GUI lifetimes use arenas; AppKit interop uses an autorelease pool and explicit retention where needed.
 
 ## Testing Guidelines
-- There is no dedicated test target yet.
-- When adding tests, use Zig `test` blocks and run them with `zig test src/main.zig` or add a `test` step in `build.zig`.
+
+- Use Zig `test` blocks. `build.zig` wires `src/search.zig` and `src/updates_test.zig` into the test step.
 - Prefer small, focused tests around text input handling and event flow.
+- Visual tests use `scripts/visual_test.sh`, sample input, and `samples/visual_baseline.png`; they require macOS Accessibility and Screen Recording permissions.
+- Focus-changing GUI and keyboard-injection tests remain paused at the user's request. Resume only when explicitly requested; see `docs/STARTUP_PERFORMANCE.md`. Compilation, static checks, and headless tests may continue.
 
 ## Commit & Pull Request Guidelines
+
 - Commit history uses short, informal, lowercase summaries; follow that style and describe behavior changes plainly.
 - PRs should include a brief summary, how to run/verify (`zig build run`), and any screenshots or recordings if the UI changes.
 
 ## Configuration & Runtime Tips
-- This project targets macOS and AppKit; ensure Xcode Command Line Tools are installed.
+
+- Settings precedence is CLI flags > `GMENU_*` environment variables > config file > defaults.
+- Config filename is `config.yaml`. Lookup prefers menu-scoped files, then base files under `~/.config/gmenu/`, `~/.gmenu/`, and the platform/XDG config directory; see `src/cli/paths.zig` for exact order.
+- CLI `--menu-id` selects the config namespace before environment overrides are applied. `--init-config` writes defaults and exits.
+- Config parsing supports documented snake_case/camelCase aliases; keep aliases and precedence intact when adding settings.
+- GUI search methods are `direct`, `fuzzy`, `fuzzy1`, `fuzzy3`, and `default` (`fuzzy`). Regex and `exact` modes are unsupported.
+- Numeric selection defaults to `auto`, enabling shortcuts for at most nine filtered items; a query ending in a digit disables shortcuts. Preserve legacy `no_numeric_selection` aliases.
+- Classic stdin input is limited to 16 MiB; followed stdin skips lines exceeding 64 KiB. `--auto-accept` accepts a singleton immediately in classic mode, waits for EOF in `--follow-stdin`, and stays disabled in `--ipc-only`.
+- IPC v2 uses `<length>\n<json-payload>` frames, with a 1 MiB payload limit and `set`/`append`/`prepend` commands. Sockets are `zmenu.<menu_id>.sock` (or `zmenu.sock`) under `TMPDIR`, falling back to `TMP`, `TEMP`, then `/tmp`.
+- IPC sockets start only in `--follow-stdin` or `--ipc-only` mode. IPC-only acceptance prints the stored JSON item; typed IPC parsing currently discards unknown item fields despite the preservation claim in `IPC_PROTOCOL.md`.
+- Icons use optional absolute file/app bundle paths and require `--show-icons`; stdin labels are plain text.
+- Query/selection caches live under `XDG_CACHE_HOME/gmenu/` or, on macOS, `~/Library/Caches/gmenu/`, scoped by menu ID.
 - Use a Terminal to run `zig build run` if you need to see stdout output.
-- The installed `zmenu` is symlinked to the build output, so rebuilding updates the installed binary.
