@@ -67,6 +67,10 @@ pub fn controlTextViewDoCommandBySelector(
 
     const app_state = state.g_state orelse return false;
 
+    if (command == objc.sel("cancelOperation:").value) {
+        logic.quit(app_state, exit_codes.user_canceled);
+        return true;
+    }
     if (command == objc.sel("moveUp:").value) {
         logic.moveSelection(app_state, -1);
         return true;
@@ -529,8 +533,8 @@ pub fn keyDown(target: objc.c.id, sel: objc.c.SEL, event: objc.c.id) callconv(.c
         }
     }
 
-    const NSTextField = objc.getClass("NSTextField").?;
-    obj.msgSendSuper(NSTextField, void, "keyDown:", .{event});
+    const NSSearchField = objc.getClass("NSSearchField").?;
+    obj.msgSendSuper(NSSearchField, void, "keyDown:", .{event});
 }
 
 pub fn performKeyEquivalent(target: objc.c.id, sel: objc.c.SEL, event: objc.c.id) callconv(.c) bool {
@@ -553,8 +557,8 @@ pub fn performKeyEquivalent(target: objc.c.id, sel: objc.c.SEL, event: objc.c.id
         }
     }
 
-    const NSTextField = objc.getClass("NSTextField").?;
-    return obj.msgSendSuper(NSTextField, bool, "performKeyEquivalent:", .{event});
+    const NSSearchField = objc.getClass("NSSearchField").?;
+    return obj.msgSendSuper(NSSearchField, bool, "performKeyEquivalent:", .{event});
 }
 
 const EventChar = struct {
@@ -608,13 +612,15 @@ pub fn becomeFirstResponder(target: objc.c.id, sel: objc.c.SEL) callconv(.c) boo
     if (target == null) return false;
 
     const obj = objc.Object.fromId(target);
-    const NSTextField = objc.getClass("NSTextField").?;
-    const accepted = obj.msgSendSuper(NSTextField, bool, "becomeFirstResponder", .{});
+    const NSSearchField = objc.getClass("NSSearchField").?;
+    const accepted = obj.msgSendSuper(NSSearchField, bool, "becomeFirstResponder", .{});
     if (accepted) {
         if (state.g_state) |app_state| {
             app_state.had_focus = true;
         }
-        obj.msgSend(void, "selectText:", .{@as(objc.c.id, null)});
+        // preserve query replacement without restarting the active field editor
+        const editor = obj.msgSend(objc.Object, "currentEditor", .{});
+        if (editor.value != null) editor.msgSend(void, "selectAll:", .{@as(objc.c.id, null)});
     }
     return accepted;
 }

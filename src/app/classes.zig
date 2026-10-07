@@ -67,8 +67,8 @@ fn dataSourceClass() objc.Class {
 pub fn searchFieldClass() objc.Class {
     if (objc.getClass("ZigSearchField")) |cls| return cls;
 
-    const NSTextField = objc.getClass("NSTextField").?;
-    const cls = objc.allocateClassPair(NSTextField, "ZigSearchField").?;
+    const NSSearchField = objc.getClass("NSSearchField").?;
+    const cls = objc.allocateClassPair(NSSearchField, "ZigSearchField").?;
     if (!cls.addMethod("cancelOperation:", callbacks.cancelOperation)) {
         @panic("failed to add cancelOperation: method");
     }

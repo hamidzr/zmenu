@@ -3,9 +3,9 @@
 Measured locally on 2026-10-07: arm64 macOS 27.0.1, native AppKit, Debug builds.
 Priorities: keyboard shortcuts with piped items and combo-switcher's IPC-only menu.
 
-GUI and keyboard-injection testing paused at the user's request. Do not run
-focus-changing checks until the user explicitly asks to resume. Documentation,
-compilation, static checks, and mock-only launcher tests may continue.
+GUI testing was paused, then temporarily resumed at the user's explicit request
+for the shadow-flash investigation below. Reproduction commands change focus and
+post keyboard events; run them only during an authorized testing window.
 
 ## Installed executable comparison
 
@@ -148,65 +148,84 @@ fixed-offset runs report expected early-key loss without failing solely for it.
   Escape, and cancellation through the actual wrappers.
 - Verify GUI and keyboard behavior with the installed Zig 0.17 binaries.
 
-## Shadow-only opening flash investigation
+## Input-area popup investigation and fix
 
-Investigated source and macOS 27 SDK headers on 2026-10-07, checkout `82d4db8`.
-No native launches, screen recording, focus changes, or keyboard injection were
-performed. The reported flash has not been reproduced by this investigation.
-User reports it with both `ls | zmenu` and combo-switcher: a small rectangle in
-the top-left input area, rather than a separate window elsewhere.
+Reproduced on macOS 27.0.1 with Zig 0.17 Debug builds after the user authorized
+GUI testing. Synthetic direct-stdin and populated IPC menus both showed a small,
+blank, shadowed popup underneath the input, after the main menu was already drawn.
 
-Confirmed in source:
+Temporary timestamp-only window diagnostics identified a second zmenu-owned
+window, approximately 312 x 237 points. Its runtime class was
+`NSKVONotifying_SPRoundedWindow`, hosting `NSKVONotifying_NSRemoteView`; the
+underlying class came from Apple's `SafariPlatformSupport.framework`. It appeared
+roughly 300-385 ms after entry into `main`, before the first scheduled key at one
+second. This identifies an OS text-services popup, rather than an incompletely
+painted menu shadow. AutoFill/completion is the likely service family; the popup's
+contents remained blank, and no account data or provider payloads were inspected.
 
-- There is one menu window and one explicit `makeKeyAndOrderFront:` call, after
-  UI construction, model initialization, and initial filtering.
-- Early activation happens before the window is allocated. Source inspection
-  does not establish that this activation exposes a partially built window.
-- Default vibrancy makes the window nonopaque with a clear background. The
-  window has a shadow and layer-backed content with a visual-effect background.
-- The header background is a separate layer-backed view with an opaque default
-  background and 8-point rounded corners. It occupies the padded header region.
-  It has no separate shadow; neither does the search field in our code.
-- Search field bezel, border, focus ring, and background drawing are disabled.
-  `makeFirstResponder:` happens after `makeKeyAndOrderFront:`. Its responder
-  callback invokes AppKit's implementation, then `selectText:`. This is another
-  opportunity for field-editor setup around reveal; AppKit may also establish a
-  responder during key-window ordering, so exact insertion timing is unverified.
-- Startup does not explicitly lay out, display, or flush the first content-layer
-  transaction before revealing the window. The render benchmark does those
-  operations explicitly, after the window is already visible.
-- Window animation behavior is left at its default. AppKit may infer an
-  order-front animation. SDK `NSWindow.h` documents `NSWindowAnimationBehaviorNone`
-  as suppressing inferred ordering animations.
-- Zig 0.17 migration preserved window construction and ordering. Current builds
-  and tests pass; installed binary matches the checkout's build artifact.
+The query control now subclasses public `NSSearchField` instead of generic
+`NSTextField`. Search/cancel button cells are hidden to keep the plain custom
+header. Query edits still filter through the existing delegate. Setting
+`sendsWholeSearchString` prevents search actions from accepting an item during
+typing; Return submits. The field-editor command delegate handles Escape as
+zmenu cancellation. Initial query selection uses the existing editor directly.
+No private framework calls, sleeps, or delayed keyboard focus remain in the fix.
+See Apple's [search-field API](https://developer.apple.com/documentation/appkit/nssearchfield)
+and [submission behavior](https://developer.apple.com/documentation/appkit/nssearchfield/sendswholesearchstring).
 
-Leading hypothesis given the reported geometry: the opaque header background
-appears before the vibrancy/body content, briefly exposing a smaller shape in the
-transparent window. The window's shadow may track that initial shape. A rectangle
-matching just the text line instead points toward field-editor insertion. Neither
-is visually confirmed. Whole-window opening animation remains a lower-priority
-candidate. Both launch paths share this setup, so the report does not implicate
-combo-switcher's provider or wrapper specifically.
+Changing initial selection alone, disabling automatic text completion, and
+setting an empty content type did not reliably suppress the popup. Native search
+fields produced no auxiliary popup in three direct and three populated IPC
+prototype recordings. Two final recordings, one per input mode, also showed no
+popup and passed Escape cancellation. Earlier text-field controls sometimes had
+clean runs too; this is an intermittent effect, so small samples cannot prove a
+universal OS guarantee. Temporary class/window diagnostics were removed.
 
-Apple documents that the [field editor](https://developer.apple.com/documentation/appkit/nswindow/fieldeditor(_:for:))
-is a shared text view, and [shadow invalidation](https://developer.apple.com/documentation/appkit/nswindow/invalidateshadow())
-recomputes the shadow for the current window shape. Window redraw normally happens
-during the event loop, and implicit Core Animation transactions normally flush at the
-end of the run loop ([window display](https://developer.apple.com/documentation/appkit/nswindow/display()),
-[transaction flush](https://developer.apple.com/documentation/quartzcore/catransaction/flush())).
-That supports investigating presentation timing, but does not prove this flash's
-cause. No runtime change was made.
+Final keyboard checks passed:
 
-When GUI testing resumes, capture the menu region during opening and compare the
-flash dimensions with the header background and text-field frames. Separately
-test a build omitting only the header background and a build preparing the field
-editor before ordering the window onscreen. Compare `--no-vibrancy` to distinguish
-transparent-window composition from editor behavior. If first-frame composition
-is implicated, test completing initial layout/display and the layer commit before
-reveal. Test `setAnimationBehavior:` set to `None` (2) independently if needed.
-Preserve early activation in every candidate. Measure real keyboard
-acceptance for every candidate: drawing before reveal may delay focus, and a
-Core Animation flush is not a guarantee of physical display presentation.
-Do not add a sleep, defer keyboard focus, or remove the shadow merely to hide
-the symptom. Check both piped and populated IPC launch paths.
+- Three prefilled direct menus and three prefilled populated IPC menus replaced
+  synthetic `stale` with `qwerty` and returned the exact expected selection on
+  Return, exit status 0.
+- Arrow Down in direct mode and Tab in populated IPC mode selected the next
+  result; Return produced the exact expected second item in both checks.
+- Five direct typing trials beginning at 100 ms preserved every character before
+  and after the change. Escape returned status 2 in every final timing trial.
+- Earlier 75 ms typing still lost input: three of five baseline trials and one of
+  five final trials were incomplete. Two final trials' first keys were over 5 ms
+  late, so these groups must not be used to claim an improved loss rate.
+
+| 100 ms typing fixture, five warm launches each | Text field baseline | Final search field |
+| --- | --- | --- |
+| Foreground handoff median | 73.9 ms | 74.0 ms |
+| First actual text-change callback median | 166.8 ms | 176.0 ms |
+| Complete queries | 5/5 | 5/5 |
+
+These are small local samples with observed scheduler variability, not a no-loss
+or exact-readiness guarantee. One first launch of an intermediate build lost four
+characters at 100 ms; loader and scheduling outliers remain possible. Captured
+video runs have recorder overhead and are excluded from the timing comparison.
+Native screen recordings advertise 120 fps but emit variable-frame-rate updates;
+this does not establish uninterrupted 8.3 ms sampling.
+
+The benchmark now supports `--prefill` for query-replacement checks and asserts
+Escape status 2 on non-accept trials. `--record-dir` records three-second menu-region
+videos over an owned gray backdrop, with no audio or permission prompts. Recording
+uses default numeric selection and requires existing Screen Recording permission.
+Use a fresh output directory; existing recording files are not overwritten.
+
+```bash
+scripts/startup_bench.sh --count 8 --runs 3 --delays 1000 --record-dir zig-out/visual/shadow/repro-direct
+scripts/startup_bench.sh --mode ipc --ipc-items --show-icons --count 8 --runs 3 --delays 1000 --record-dir zig-out/visual/shadow/repro-ipc
+scripts/startup_bench.sh --prefill --ready --accept --runs 3 --profile
+```
+
+Raw synthetic recordings, contact sheets, diagnostics, and timing JSONL remain
+under `zig-out/visual/shadow/` locally. `confirmed-popup.png` shows the reproduced
+text-field popup; `validated-direct-contact.png` and `validated-ipc-contact.png`
+show the final opening sequences. The usual single-frame visual snapshot test was
+not used to diagnose a transient opening effect, and its baseline was not changed.
+
+`zig build`, `just check` (full Zig formatting and 11 project tests), Swift
+compilation with warnings as errors, and `git diff --check` passed. `just install`
+refreshed the local binaries; installed zmenu matches the validated build and its
+help entrypoint passed. GUI test processes have finished.

@@ -224,6 +224,8 @@ pub fn run(config: appconfig.Config) !void {
 
     text_field.msgSend(void, "setEditable:", .{true});
     text_field.msgSend(void, "setSelectable:", .{true});
+    // query changes filter through the delegate; only Return submits a selection
+    text_field.msgSend(void, "setSendsWholeSearchString:", .{true});
     text_field.msgSend(void, "setBezeled:", .{false});
     text_field.msgSend(void, "setBordered:", .{false});
     text_field.msgSend(void, "setFocusRingType:", .{@as(c_uint, 1)}); // NSFocusRingTypeNone = 1
@@ -231,6 +233,9 @@ pub fn run(config: appconfig.Config) !void {
 
     // Ensure proper text baseline alignment
     const cell = text_field.msgSend(objc.Object, "cell", .{});
+    // retain the plain input appearance inside the custom header
+    cell.msgSend(void, "setSearchButtonCell:", .{@as(objc.c.id, null)});
+    cell.msgSend(void, "setCancelButtonCell:", .{@as(objc.c.id, null)});
     cell.msgSend(void, "setUsesSingleLineMode:", .{true});
     cell.msgSend(void, "setLineBreakMode:", .{@as(c_ulong, 2)}); // NSLineBreakByTruncatingTail
 

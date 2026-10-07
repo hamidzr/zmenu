@@ -16,6 +16,8 @@ struct Options {
     var ipcItems = false
     var showIcons = false
     var ctl = ""
+    var prefill = false
+    var recordDir = ""
 }
 
 struct BenchError: Error, CustomStringConvertible {
@@ -37,6 +39,9 @@ Usage: startup_bench.sh [options]
   --show-icons           include the icon column used by combo-switcher
   --ctl PATH             zmenuctl executable (default: sibling of --binary)
   --profile              capture zmenu --startup-profile phase timings
+  --prefill              start with synthetic stale query; verify typing replaces it
+  --record-dir PATH      record 3-second menu-region videos over an owned backdrop
+                         uses default numeric selection; timings include recorder overhead
   --help                 show help without opening windows or checking permissions
 
 Types qwerty with 10 ms between keys. Requires existing Accessibility and event-posting
@@ -59,11 +64,15 @@ func parseOptions() throws -> Options {
         if flag == "--ipc-items" { options.ipcItems = true; index += 1; continue }
         if flag == "--show-icons" { options.showIcons = true; index += 1; continue }
         if flag == "--profile" { options.profile = true; index += 1; continue }
+        if flag == "--prefill" { options.prefill = true; index += 1; continue }
         guard index + 1 < args.count else { throw BenchError("missing value for \(flag)") }
         let value = args[index + 1]
         switch flag {
         case "--binary": options.binary = value
         case "--ctl": options.ctl = value
+        case "--record-dir":
+            guard !value.isEmpty else { throw BenchError("--record-dir requires a path") }
+            options.recordDir = value
         case "--runs":
             guard let number = Int(value), number > 0 else { throw BenchError("--runs must be positive") }
             options.runs = number
@@ -253,10 +262,14 @@ final class Harness {
         originalApp = NSWorkspace.shared.frontmostApplication
         app = NSApplication.shared
         app.setActivationPolicy(.regular)
-        window = NSWindow(contentRect: NSRect(x: 100, y: 100, width: 420, height: 90),
+        window = NSWindow(contentRect: options.recordDir.isEmpty ? NSRect(x: 100, y: 100, width: 420, height: 90) : NSScreen.main!.frame,
                           styleMask: [.titled], backing: .buffered, defer: false)
         window.title = "zmenu startup benchmark keyboard sink"
         window.isReleasedWhenClosed = false
+        if !options.recordDir.isEmpty {
+            window.backgroundColor = NSColor(calibratedWhite: 0.75, alpha: 1)
+            window.hasShadow = false
+        }
         sink = NSTextField(frame: NSRect(x: 16, y: 28, width: 388, height: 24))
         sink.placeholderString = "Early benchmark keys land here"
         window.contentView?.addSubview(sink)
@@ -299,11 +312,39 @@ final class Harness {
 
     func trial(_ number: Int, delayMs: Double) throws -> [String: Any] {
         try activateSink()
+        var recorder: Process?
+        var recordingPath: String?
+        if !options.recordDir.isEmpty {
+            try FileManager.default.createDirectory(atPath: options.recordDir, withIntermediateDirectories: true)
+            let screen = NSScreen.main!.frame
+            let width = min(1100, Int(screen.width) - 40)
+            let height = min(800, Int(screen.height) - 120)
+            let rect = "\(Int((screen.width - Double(width)) / 2)),\(Int((screen.height - Double(height)) / 2)),\(width),\(height)"
+            let path = URL(fileURLWithPath: options.recordDir).appendingPathComponent("trial-\(number).mov").path
+            guard !FileManager.default.fileExists(atPath: path) else { throw BenchError("recording already exists: \(path)") }
+            let command = Process()
+            command.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
+            command.arguments = ["-x", "-v", "-V3", "-R" + rect, path]
+            command.standardOutput = FileHandle.nullDevice
+            command.standardError = FileHandle.nullDevice
+            try command.run()
+            recorder = command
+            recordingPath = path
+            let settle = deadline(nowNs(), 500)
+            while nowNs() < settle { pumpEvents() }
+        }
+        defer {
+            if let recorder, recorder.isRunning {
+                recorder.terminate()
+                recorder.waitUntilExit()
+            }
+        }
         let process = Process()
         process.executableURL = URL(fileURLWithPath: options.binary)
         let menuId = "startup-bench-\(ownPid)-\(number)"
         process.arguments = ["--menu-id", menuId, "--title", menuId,
-                             "--no-numeric-selection", "--no-levenshtein-fallback", "--initial-query", "", "--limit", "0"]
+                             "--no-levenshtein-fallback", "--initial-query", options.prefill ? "stale" : "", "--limit", "0"]
+        if options.recordDir.isEmpty { process.arguments?.append("--no-numeric-selection") }
         if options.profile { process.arguments?.append("--startup-profile") }
         if options.showIcons { process.arguments?.append("--show-icons") }
         if options.mode == "follow" { process.arguments?.append("--follow-stdin") }
@@ -480,9 +521,20 @@ final class Harness {
             }
         }
         stopChild(process)
+        if !options.accept && process.terminationStatus != 2 {
+            throw BenchError("Escape cancellation regression: expected exit status 2")
+        }
+        if let recorder {
+            recorder.waitUntilExit()
+            guard recorder.terminationStatus == 0, let recordingPath,
+                  FileManager.default.fileExists(atPath: recordingPath) else {
+                throw BenchError("screen recording failed")
+            }
+        }
         var result: [String: Any] = [
             "type": "trial", "trial": number, "mode": options.mode, "count": options.count,
             "show_icons": options.showIcons,
+            "prefill": options.prefill, "recording": recordingPath as Any? ?? NSNull(),
             "ready": options.ready, "delay_ms": options.ready ? NSNull() : delayMs as Any,
             "stdin_delay_ms": options.stdinDelayMs, "spawn_return_ms": spawnReturnMs,
             "foreground_ms": activation.foregroundMs as Any? ?? NSNull(),
@@ -576,6 +628,9 @@ do {
     let options = try parseOptions()
     guard AXIsProcessTrusted() else { throw BenchError("Accessibility permission missing for benchmark executable; no prompt requested") }
     guard CGPreflightPostEventAccess() else { throw BenchError("event-posting permission missing; no prompt requested") }
+    if !options.recordDir.isEmpty && !CGPreflightScreenCaptureAccess() {
+        throw BenchError("Screen Recording permission missing; no prompt requested")
+    }
     signal(SIGPIPE, SIG_IGN)
     let harness = Harness(options)
     try harness.run()
