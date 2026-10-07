@@ -41,6 +41,18 @@ pub fn controlTextDidChange(target: objc.c.id, sel: objc.c.SEL, notification: ob
     applyUserQuery(app_state, query);
 }
 
+pub fn onStartupProfileTimer(target: objc.c.id, sel: objc.c.SEL, timer: objc.c.id) callconv(.c) void {
+    _ = target;
+    _ = sel;
+    const app_state = state.g_state orelse return;
+    const app = objc.getClass("NSApplication").?.msgSend(objc.Object, "sharedApplication", .{});
+    const editor = app_state.text_field.msgSend(objc.c.id, "currentEditor", .{});
+    if (app.msgSend(bool, "isActive", .{}) and app_state.window.msgSend(bool, "isKeyWindow", .{}) and editor != null) {
+        time_compat.startupStage("input_ready");
+        objc.Object.fromId(timer).msgSend(void, "invalidate", .{});
+    }
+}
+
 pub fn controlTextViewDoCommandBySelector(
     target: objc.c.id,
     sel: objc.c.SEL,
@@ -389,8 +401,8 @@ pub fn onRenderBench(target: objc.c.id, sel: objc.c.SEL, timer: objc.c.id) callc
         benchPaint(app_state);
     }
 
-    var keystroke_samples: [render_bench_max_samples]i128 = undefined;
-    var paint_samples: [render_bench_max_samples]i128 = undefined;
+    var keystroke_samples: [render_bench_max_samples * render_bench_rounds]i128 = undefined;
+    var paint_samples: [render_bench_max_samples * render_bench_rounds]i128 = undefined;
     var sample_count: usize = 0;
 
     var round: usize = 0;
@@ -434,7 +446,7 @@ pub fn onRenderBench(target: objc.c.id, sel: objc.c.SEL, timer: objc.c.id) callc
 }
 
 fn applyQuery(app_state: *state.AppState, query: []const u8) void {
-    var buf: [render_bench_max_samples]u8 = undefined;
+    var buf: [render_bench_max_samples + 1]u8 = undefined;
     if (query.len >= buf.len) return;
     @memcpy(buf[0..query.len], query);
     buf[query.len] = 0;
@@ -584,8 +596,10 @@ fn handleNumericShortcutWithQuery(app_state: *state.AppState, ch: u8, query_for_
 }
 
 fn applyUserQuery(app_state: *state.AppState, query: []const u8) void {
+    const first_input = time_compat.recordFirstInput();
     app_state.last_keystroke_ms = time_compat.milliTimestamp();
     logic.applyFilter(app_state, query);
+    if (first_input) time_compat.startupStage("first_query_applied");
     logic.maybeAutoAccept(app_state, .keystroke);
 }
 

@@ -63,6 +63,7 @@ pub const Config = struct {
     corner_radius: f64,
     vibrancy: bool,
     render_bench: bool,
+    startup_profile: bool,
 
     pub fn hasNumericSelectionColumn(self: Config) bool {
         return self.numeric_selection_mode != .off;
@@ -112,5 +113,6 @@ pub fn defaults() Config {
         .corner_radius = 14.0,
         .vibrancy = true,
         .render_bench = false,
+        .startup_profile = false,
     };
 }

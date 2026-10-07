@@ -21,6 +21,9 @@ fn inputHandlerClass() objc.Class {
     if (!cls.addMethod("onRenderBench:", callbacks.onRenderBench)) {
         @panic("failed to add onRenderBench: method");
     }
+    if (!cls.addMethod("onStartupProfileTimer:", callbacks.onStartupProfileTimer)) {
+        @panic("failed to add onStartupProfileTimer: method");
+    }
     if (!cls.addMethod("onSubmit:", callbacks.onSubmit)) {
         @panic("failed to add onSubmit: method");
     }

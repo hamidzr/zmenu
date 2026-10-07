@@ -70,6 +70,7 @@ fn printHelp() void {
         \\      --secondary-text-color <hex> Secondary text color
         \\      --selection-color <hex>   Selected row highlight
         \\      --init-config            Write default config and exit
+        \\      --startup-profile        Log startup stages to stderr
         \\
     , .{}) catch {};
 }

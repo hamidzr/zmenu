@@ -27,12 +27,18 @@ const applyPlaceholderColor = objc_helpers.applyPlaceholderColor;
 const startUpdateQueue = updates.startUpdateQueue;
 const followStdinThread = updates.followStdinThread;
 
-const NSApplicationActivationPolicyRegular: i64 = 0;
+const NSApplicationActivationPolicyAccessory: i64 = 1;
 const NSWindowStyleMaskBorderless: u64 = 0;
 const NSBackingStoreBuffered: u64 = 2;
 
 fn clamp(value: f64, lo: f64, hi: f64) f64 {
     return @min(@max(value, lo), hi);
+}
+
+fn activateApp(app: objc.Object) void {
+    app.msgSend(void, "finishLaunching", .{});
+    app.msgSend(void, "activateIgnoringOtherApps:", .{true});
+    time_compat.startupStage("activation_requested");
 }
 
 pub fn run(config: appconfig.Config) !void {
@@ -53,6 +59,7 @@ pub fn run(config: appconfig.Config) !void {
         };
     }
 
+    time_compat.startupStage("items_read");
     const pid_path = pid.create(allocator, config.menu_id) catch {
         io_compat.stderrPrint("zmenu: another instance is running\n", .{}) catch {};
         std.process.exit(exit_codes.unknown_error);
@@ -75,7 +82,10 @@ pub fn run(config: appconfig.Config) !void {
 
     const NSApplication = objc.getClass("NSApplication").?;
     const app = NSApplication.msgSend(objc.Object, "sharedApplication", .{});
-    _ = app.msgSend(bool, "setActivationPolicy:", .{NSApplicationActivationPolicyRegular});
+    _ = app.msgSend(bool, "setActivationPolicy:", .{NSApplicationActivationPolicyAccessory});
+    time_compat.startupStage("app_initialized");
+    // overlap activation with view setup; auto-accept can exit without taking focus
+    if (!config.auto_accept) activateApp(app);
 
     const style: u64 = NSWindowStyleMaskBorderless;
     var window_width = config.window_width;
@@ -368,6 +378,7 @@ pub fn run(config: appconfig.Config) !void {
     }
 
     const queue = try startUpdateQueue(config);
+    time_compat.startupStage("ui_built");
     defer queue.deinit();
 
     var app_state = state.AppState{
@@ -396,6 +407,7 @@ pub fn run(config: appconfig.Config) !void {
     };
     defer app_state.model.deinit(allocator);
     state.g_state = &app_state;
+    time_compat.startupStage("model_ready");
 
     if (queue.queue) |queue_ptr| {
         if (config.follow_stdin and !config.ipc_only) {
@@ -416,6 +428,13 @@ pub fn run(config: appconfig.Config) !void {
     const data_source = classes.makeDataSource();
     table_view.msgSend(void, "setDataSource:", .{data_source});
     table_view.msgSend(void, "setDelegate:", .{data_source});
+
+    if (config.startup_profile) {
+        const NSTimer = objc.getClass("NSTimer").?;
+        _ = NSTimer.msgSend(objc.Object, "scheduledTimerWithTimeInterval:target:selector:userInfo:repeats:", .{
+            @as(f64, 0.001), handler, objc.sel("onStartupProfileTimer:"), @as(objc.c.id, null), true,
+        });
+    }
 
     if (config.render_bench) {
         logic.applyFilter(&app_state, "");
@@ -439,12 +458,14 @@ pub fn run(config: appconfig.Config) !void {
         logic.maybeAutoAccept(&app_state, .initial);
     }
 
-    app.msgSend(void, "activateIgnoringOtherApps:", .{true});
+    time_compat.startupStage("initial_filter");
+    if (config.auto_accept) activateApp(app);
     window.msgSend(void, "setAcceptsMouseMovedEvents:", .{true});
     window.msgSend(void, "makeKeyAndOrderFront:", .{@as(objc.c.id, null)});
     if (config.render_bench) {
         io_compat.stderrPrint("render-bench launch_ms={d:.3}\n", .{time_compat.sinceProcessStartMs()}) catch {};
     }
     _ = window.msgSend(bool, "makeFirstResponder:", .{text_field});
+    time_compat.startupStage("first_responder_requested");
     app.msgSend(void, "run", .{});
 }

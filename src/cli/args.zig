@@ -247,6 +247,10 @@ pub fn applyArgs(allocator: std.mem.Allocator, args: []const [:0]const u8, confi
             config.render_bench = true;
             continue;
         }
+        if (std.mem.eql(u8, arg, "--startup-profile")) {
+            config.startup_profile = true;
+            continue;
+        }
     }
 }
 

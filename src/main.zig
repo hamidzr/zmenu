@@ -13,6 +13,9 @@ pub fn main(init: std.process.Init) !void {
         std.process.exit(1);
     };
 
+    time_compat.enableStartupProfile(config.startup_profile);
+    time_compat.startupStage("config_parsed");
+
     if (config.terminal_mode) {
         try terminal.run(config, allocator);
     } else {
