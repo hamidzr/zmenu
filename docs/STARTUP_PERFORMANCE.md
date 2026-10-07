@@ -147,3 +147,66 @@ fixed-offset runs report expected early-key loss without failing solely for it.
 - Repeat early-key sweeps and cold/loaded launch observations; verify Enter,
   Escape, and cancellation through the actual wrappers.
 - Verify GUI and keyboard behavior with the installed Zig 0.17 binaries.
+
+## Shadow-only opening flash investigation
+
+Investigated source and macOS 27 SDK headers on 2026-10-07, checkout `82d4db8`.
+No native launches, screen recording, focus changes, or keyboard injection were
+performed. The reported flash has not been reproduced by this investigation.
+User reports it with both `ls | zmenu` and combo-switcher: a small rectangle in
+the top-left input area, rather than a separate window elsewhere.
+
+Confirmed in source:
+
+- There is one menu window and one explicit `makeKeyAndOrderFront:` call, after
+  UI construction, model initialization, and initial filtering.
+- Early activation happens before the window is allocated. Source inspection
+  does not establish that this activation exposes a partially built window.
+- Default vibrancy makes the window nonopaque with a clear background. The
+  window has a shadow and layer-backed content with a visual-effect background.
+- The header background is a separate layer-backed view with an opaque default
+  background and 8-point rounded corners. It occupies the padded header region.
+  It has no separate shadow; neither does the search field in our code.
+- Search field bezel, border, focus ring, and background drawing are disabled.
+  `makeFirstResponder:` happens after `makeKeyAndOrderFront:`. Its responder
+  callback invokes AppKit's implementation, then `selectText:`. This is another
+  opportunity for field-editor setup around reveal; AppKit may also establish a
+  responder during key-window ordering, so exact insertion timing is unverified.
+- Startup does not explicitly lay out, display, or flush the first content-layer
+  transaction before revealing the window. The render benchmark does those
+  operations explicitly, after the window is already visible.
+- Window animation behavior is left at its default. AppKit may infer an
+  order-front animation. SDK `NSWindow.h` documents `NSWindowAnimationBehaviorNone`
+  as suppressing inferred ordering animations.
+- Zig 0.17 migration preserved window construction and ordering. Current builds
+  and tests pass; installed binary matches the checkout's build artifact.
+
+Leading hypothesis given the reported geometry: the opaque header background
+appears before the vibrancy/body content, briefly exposing a smaller shape in the
+transparent window. The window's shadow may track that initial shape. A rectangle
+matching just the text line instead points toward field-editor insertion. Neither
+is visually confirmed. Whole-window opening animation remains a lower-priority
+candidate. Both launch paths share this setup, so the report does not implicate
+combo-switcher's provider or wrapper specifically.
+
+Apple documents that the [field editor](https://developer.apple.com/documentation/appkit/nswindow/fieldeditor(_:for:))
+is a shared text view, and [shadow invalidation](https://developer.apple.com/documentation/appkit/nswindow/invalidateshadow())
+recomputes the shadow for the current window shape. Window redraw normally happens
+during the event loop, and implicit Core Animation transactions normally flush at the
+end of the run loop ([window display](https://developer.apple.com/documentation/appkit/nswindow/display()),
+[transaction flush](https://developer.apple.com/documentation/quartzcore/catransaction/flush())).
+That supports investigating presentation timing, but does not prove this flash's
+cause. No runtime change was made.
+
+When GUI testing resumes, capture the menu region during opening and compare the
+flash dimensions with the header background and text-field frames. Separately
+test a build omitting only the header background and a build preparing the field
+editor before ordering the window onscreen. Compare `--no-vibrancy` to distinguish
+transparent-window composition from editor behavior. If first-frame composition
+is implicated, test completing initial layout/display and the layer commit before
+reveal. Test `setAnimationBehavior:` set to `None` (2) independently if needed.
+Preserve early activation in every candidate. Measure real keyboard
+acceptance for every candidate: drawing before reveal may delay focus, and a
+Core Animation flush is not a guarantee of physical display presentation.
+Do not add a sleep, defer keyboard focus, or remove the shadow merely to hide
+the symptom. Check both piped and populated IPC launch paths.
