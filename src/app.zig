@@ -439,7 +439,7 @@ pub fn run(config: appconfig.Config) !void {
     if (config.render_bench) {
         logic.applyFilter(&app_state, "");
     } else if (initial_query.len > 0) {
-        const initial_query_z = try allocator.dupeZ(u8, initial_query);
+        const initial_query_z = try allocator.dupeSentinel(u8, initial_query, 0);
         text_field.msgSend(void, "setStringValue:", .{nsString(initial_query_z)});
         logic.applyFilter(&app_state, initial_query);
     } else {

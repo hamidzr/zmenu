@@ -16,7 +16,7 @@ Native macOS AppKit MVP for the gmenu replacement (zmenu).
 
 ## Requirements
 - macOS
-- Zig 0.16.0+
+- Zig 0.17.0
 - Xcode Command Line Tools (for AppKit headers)
 
 ## Run

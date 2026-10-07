@@ -123,8 +123,8 @@ fn enableRawMode(fd: std.posix.fd_t) !std.posix.termios {
     raw.cflag.PARENB = false;
     raw.cflag.CSIZE = .CS8;
 
-    raw.cc[@intFromEnum(std.posix.V.MIN)] = 1;
-    raw.cc[@intFromEnum(std.posix.V.TIME)] = 0;
+    raw.cc[@backingInt(std.posix.V.MIN)] = 1;
+    raw.cc[@backingInt(std.posix.V.TIME)] = 0;
 
     try std.posix.tcsetattr(fd, .NOW, raw);
     return term;

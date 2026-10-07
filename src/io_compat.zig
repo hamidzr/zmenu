@@ -52,12 +52,11 @@ pub fn printFd(fd: std.posix.fd_t, comptime fmt: []const u8, args: anytype) !voi
 }
 
 pub fn writeAll(fd: std.posix.fd_t, bytes: []const u8) !void {
-    var offset: usize = 0;
-    while (offset < bytes.len) {
-        const n = try std.posix.write(fd, bytes[offset..]);
-        if (n == 0) return error.WriteFailed;
-        offset += n;
-    }
+    const file: std.Io.File = .{
+        .handle = fd,
+        .flags = .{ .nonblocking = false },
+    };
+    try file.writeStreamingAll(globalIo(), bytes);
 }
 
 pub fn readAllFromFd(allocator: std.mem.Allocator, fd: std.posix.fd_t, max_bytes: usize) ![]u8 {
@@ -87,7 +86,7 @@ pub fn readAllFile(allocator: std.mem.Allocator, file: std.Io.File, max_bytes: u
 }
 
 pub fn getEnvVarOwned(allocator: std.mem.Allocator, name: []const u8) EnvError![]const u8 {
-    const name_z = try allocator.dupeZ(u8, name);
+    const name_z = try allocator.dupeSentinel(u8, name, 0);
     defer allocator.free(name_z);
 
     const value_ptr = std.c.getenv(name_z) orelse return error.EnvironmentVariableNotFound;

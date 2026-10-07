@@ -198,10 +198,10 @@ pub fn menuItemFromIpc(allocator: std.mem.Allocator, payload: []const u8) ?menu.
     const label = std.mem.trim(u8, item.label, " \t\r\n");
     if (label.len == 0) return null;
 
-    const label_z = allocator.dupeZ(u8, label) catch return null;
+    const label_z = allocator.dupeSentinel(u8, label, 0) catch return null;
     errdefer allocator.free(label_z);
     const icon = if (item.icon) |path|
-        allocator.dupeZ(u8, path) catch return null
+        allocator.dupeSentinel(u8, path, 0) catch return null
     else
         null;
     const payload_copy = allocator.dupe(u8, payload) catch return null;

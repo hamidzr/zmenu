@@ -41,10 +41,11 @@ pub fn updateSelection(app_state: *state.AppState) void {
 
 pub fn updateMatchLabel(app_state: *state.AppState) void {
     var buf: [32]u8 = undefined;
-    const label_z = std.fmt.bufPrintZ(
+    const label_z = std.fmt.bufPrintSentinel(
         &buf,
         "{d} / {d}",
         .{ app_state.model.match_count, app_state.model.items.len },
+        0,
     ) catch return;
     app_state.match_label.msgSend(void, "setStringValue:", .{objc_helpers.nsString(label_z)});
 }

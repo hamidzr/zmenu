@@ -59,7 +59,7 @@ pub fn loadConfigFile(allocator: std.mem.Allocator, menu_id: [:0]const u8, confi
 
     const contents = try io_compat.readAllFile(allocator, file, 64 * 1024);
     defer allocator.free(contents);
-    var seen_keys: [config_key_variants.len]?[]const u8 = [_]?[]const u8{null} ** config_key_variants.len;
+    var seen_keys: [config_key_variants.len]?[]const u8 = @splat(null);
     var iter = std.mem.splitScalar(u8, contents, '\n');
     while (iter.next()) |line| {
         var trimmed = std.mem.trim(u8, line, " \t\r");
@@ -163,19 +163,19 @@ fn canonicalKeyIndex(key: []const u8) ?usize {
 
 fn applyConfigKV(allocator: std.mem.Allocator, config: *appconfig.Config, key: []const u8, value: []const u8) !void {
     if (eqKey(key, "title")) {
-        config.title = try allocator.dupeZ(u8, value);
+        config.title = try allocator.dupeSentinel(u8, value, 0);
         return;
     }
     if (eqKey(key, "prompt")) {
-        config.placeholder = try allocator.dupeZ(u8, value);
+        config.placeholder = try allocator.dupeSentinel(u8, value, 0);
         return;
     }
     if (eqKey(key, "menu_id") or eqKey(key, "menuId")) {
-        config.menu_id = try allocator.dupeZ(u8, value);
+        config.menu_id = try allocator.dupeSentinel(u8, value, 0);
         return;
     }
     if (eqKey(key, "initial_query") or eqKey(key, "initialQuery")) {
-        config.initial_query = try allocator.dupeZ(u8, value);
+        config.initial_query = try allocator.dupeSentinel(u8, value, 0);
         return;
     }
     if (eqKey(key, "search_method") or eqKey(key, "searchMethod")) {

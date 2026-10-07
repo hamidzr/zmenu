@@ -108,9 +108,10 @@ made.
   hooks also passed in the scripts repository.
 - GUI binaries were built and installed through `just install` from an isolated
   Zig 0.16 snapshot while another session migrated the checkout to Zig 0.17.
-  Current Zig 0.17 unit tests pass; GUI build remains blocked by the pinned
-  `zig-objc` iterator syntax. Full format check also flags unrelated
-  `src/terminal.zig` and `src/pid.zig`; their formatting was preserved.
+  Completed migration now builds both binaries with system Zig 0.17, passes all
+  11 project tests, and passes the full Zig format check. CLI forwarding,
+  singleton auto-accept without activation, and IPC framing also pass.
+  Focus-changing GUI and keyboard checks remain paused.
 - `COUNT=2000 RUNS=3 scripts/render_bench.sh` passed: 72 samples, 3.842 ms median
   filter/reload/paint, 2.641 ms median paint. This measures rendering and does not
   exercise OS keyboard delivery.
@@ -145,4 +146,4 @@ fixed-offset runs report expected early-key loss without failing solely for it.
   stale-menu cleanup. Keep private window titles and item payloads out of logs.
 - Repeat early-key sweeps and cold/loaded launch observations; verify Enter,
   Escape, and cancellation through the actual wrappers.
-- Validate the final Zig 0.17 GUI build after the separate migration is complete.
+- Verify GUI and keyboard behavior with the installed Zig 0.17 binaries.

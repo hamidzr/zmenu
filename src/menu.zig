@@ -51,7 +51,7 @@ pub fn parseItem(allocator: std.mem.Allocator, line: []const u8, index: usize) !
     const label = trimLineEnding(line);
     if (label.len == 0) return error.EmptyLabel;
 
-    const label_z = try allocator.dupeZ(u8, label);
+    const label_z = try allocator.dupeSentinel(u8, label, 0);
     return .{ .label = label_z, .index = index, .icon = null, .ipc_payload = null };
 }
 

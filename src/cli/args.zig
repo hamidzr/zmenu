@@ -4,7 +4,7 @@ const parse = @import("parse.zig");
 
 pub fn resolveMenuIDFromArgs(allocator: std.mem.Allocator, args: []const [:0]const u8) !?[:0]const u8 {
     if (findArgValue(args, "--menu-id", "-m")) |value| {
-        return try allocator.dupeZ(u8, value);
+        return try allocator.dupeSentinel(u8, value, 0);
     }
     return null;
 }
@@ -17,25 +17,25 @@ pub fn applyArgs(allocator: std.mem.Allocator, args: []const [:0]const u8, confi
         if (std.mem.eql(u8, arg, "--menu-id") or std.mem.eql(u8, arg, "-m")) {
             i += 1;
             if (i >= args.len) return error.MissingValue;
-            config.menu_id = try allocator.dupeZ(u8, args[i]);
+            config.menu_id = try allocator.dupeSentinel(u8, args[i], 0);
             continue;
         }
         if (std.mem.eql(u8, arg, "--initial-query") or std.mem.eql(u8, arg, "-q")) {
             i += 1;
             if (i >= args.len) return error.MissingValue;
-            config.initial_query = try allocator.dupeZ(u8, args[i]);
+            config.initial_query = try allocator.dupeSentinel(u8, args[i], 0);
             continue;
         }
         if (std.mem.eql(u8, arg, "--title") or std.mem.eql(u8, arg, "-t")) {
             i += 1;
             if (i >= args.len) return error.MissingValue;
-            config.title = try allocator.dupeZ(u8, args[i]);
+            config.title = try allocator.dupeSentinel(u8, args[i], 0);
             continue;
         }
         if (std.mem.eql(u8, arg, "--prompt") or std.mem.eql(u8, arg, "-p")) {
             i += 1;
             if (i >= args.len) return error.MissingValue;
-            config.placeholder = try allocator.dupeZ(u8, args[i]);
+            config.placeholder = try allocator.dupeSentinel(u8, args[i], 0);
             continue;
         }
         if (std.mem.eql(u8, arg, "--search-method") or std.mem.eql(u8, arg, "-s")) {

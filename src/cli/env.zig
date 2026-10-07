@@ -183,5 +183,5 @@ pub fn applyEnv(allocator: std.mem.Allocator, config: *appconfig.Config) !void {
 fn envValue(allocator: std.mem.Allocator, name: []const u8) ![:0]const u8 {
     const value = try io_compat.getEnvVarOwned(allocator, name);
     defer allocator.free(value);
-    return allocator.dupeZ(u8, value);
+    return allocator.dupeSentinel(u8, value, 0);
 }

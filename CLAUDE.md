@@ -9,7 +9,7 @@ zmenu is a native macOS AppKit-based fuzzy menu selector written in Zig. It's a 
 ## Requirements
 
 - macOS
-- Zig 0.15.2+ (zig-objc requires a released Zig version)
+- Zig 0.17.0 (zig-objc requires a released Zig version)
 - Xcode Command Line Tools (for AppKit headers)
 
 ## Commands

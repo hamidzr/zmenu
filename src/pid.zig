@@ -61,7 +61,7 @@ fn existingPidIsRunning(pid_path: []const u8) !bool {
 
 fn pidIsAlive(pid: std.posix.pid_t) bool {
     if (pid <= 0) return false;
-    std.posix.kill(pid, @enumFromInt(0)) catch |err| switch (err) {
+    std.posix.kill(pid, @fromBackingInt(@intCast(0))) catch |err| switch (err) {
         error.ProcessNotFound => return false,
         error.PermissionDenied => return true,
         else => return true,
