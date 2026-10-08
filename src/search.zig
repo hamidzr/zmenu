@@ -42,6 +42,9 @@ pub fn filterIndices(
         levenshtein.appendFallbackMatches(labels, trimmed, matches);
         std.sort.insertion(Match, matches.items, {}, fuzzy.scoreDescIndexAsc);
     }
+    if (opts.preserve_order) {
+        std.sort.insertion(Match, matches.items, {}, fuzzy.indexAsc);
+    }
 
     out_indices.clearRetainingCapacity();
     const limit = effectiveLimit(opts.limit, matches.items.len);
@@ -142,6 +145,43 @@ test "levenshtein fallback returns closest matches when enabled" {
     try std.testing.expectEqual(@as(usize, 2), out.items.len);
     try std.testing.expectEqual(@as(usize, 1), out.items[0]);
     try std.testing.expectEqual(@as(usize, 0), out.items[1]);
+}
+
+test "preserve order applies to fallback matches before result limit" {
+    const labels = [_][]const u8{ "ab", "abce", "wxyz" };
+    var matches = std.ArrayList(Match).empty;
+    var out = std.ArrayList(usize).empty;
+    defer matches.deinit(std.testing.allocator);
+    defer out.deinit(std.testing.allocator);
+
+    try matches.ensureTotalCapacity(std.testing.allocator, labels.len);
+    try out.ensureTotalCapacity(std.testing.allocator, labels.len);
+
+    const methods = [_]SearchMethod{ .direct, .fuzzy, .fuzzy1, .fuzzy3, .default };
+    for (methods) |method| {
+        filterIndices(labels[0..], "abc", .{ .method = method, .preserve_order = true }, &matches, &out);
+        try std.testing.expectEqualSlices(usize, &[_]usize{ 0, 1 }, out.items);
+
+        filterIndices(labels[0..], "abc", .{ .method = method, .preserve_order = true, .limit = 1 }, &matches, &out);
+        try std.testing.expectEqualSlices(usize, &[_]usize{0}, out.items);
+    }
+}
+
+test "preserve order applies to ranked matches without fallback" {
+    const labels = [_][]const u8{ "abXc", "abc" };
+    var matches = std.ArrayList(Match).empty;
+    var out = std.ArrayList(usize).empty;
+    defer matches.deinit(std.testing.allocator);
+    defer out.deinit(std.testing.allocator);
+
+    try matches.ensureTotalCapacity(std.testing.allocator, labels.len);
+    try out.ensureTotalCapacity(std.testing.allocator, labels.len);
+
+    const methods = [_]SearchMethod{ .fuzzy, .fuzzy1, .fuzzy3, .default };
+    for (methods) |method| {
+        filterIndices(labels[0..], "abc", .{ .method = method, .preserve_order = true, .levenshtein_fallback = false }, &matches, &out);
+        try std.testing.expectEqualSlices(usize, &[_]usize{ 0, 1 }, out.items);
+    }
 }
 
 test "fuzzy matches agenda after direct hit for anda" {
