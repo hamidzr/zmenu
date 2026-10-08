@@ -59,14 +59,16 @@ pub fn loadConfigFile(allocator: std.mem.Allocator, menu_id: [:0]const u8, confi
 
     const contents = try io_compat.readAllFile(allocator, file, 64 * 1024);
     defer allocator.free(contents);
+    try applyConfigContents(allocator, config, contents);
+}
+
+fn applyConfigContents(allocator: std.mem.Allocator, config: *appconfig.Config, contents: []const u8) !void {
     var seen_keys: [config_key_variants.len]?[]const u8 = @splat(null);
     var iter = std.mem.splitScalar(u8, contents, '\n');
     while (iter.next()) |line| {
         var trimmed = std.mem.trim(u8, line, " \t\r");
         if (trimmed.len == 0 or trimmed[0] == '#') continue;
-        if (std.mem.indexOfScalar(u8, trimmed, '#')) |idx| {
-            trimmed = std.mem.trim(u8, trimmed[0..idx], " \t");
-        }
+        trimmed = std.mem.trim(u8, stripComment(trimmed), " \t");
         if (trimmed.len == 0) continue;
 
         const colon = std.mem.indexOfScalar(u8, trimmed, ':') orelse continue;
@@ -305,6 +307,30 @@ fn applyConfigKV(allocator: std.mem.Allocator, config: *appconfig.Config, key: [
     }
 }
 
+fn stripComment(line: []const u8) []const u8 {
+    const colon = std.mem.indexOfScalar(u8, line, ':') orelse return line;
+    if (std.mem.indexOfScalar(u8, line[0..colon], '#')) |idx| return line[0..idx];
+    const value_start = line.len - std.mem.trimStart(u8, line[colon + 1 ..], " \t").len;
+    var quote: ?u8 = null;
+    var escaped = false;
+    for (line, 0..) |char, idx| {
+        if (quote) |delimiter| {
+            if (escaped) {
+                escaped = false;
+            } else if (delimiter == '"' and char == '\\') {
+                escaped = true;
+            } else if (char == delimiter) {
+                quote = null;
+            }
+        } else if (char == '#') {
+            return line[0..idx];
+        } else if (idx == value_start and (char == '"' or char == '\'')) {
+            quote = char;
+        }
+    }
+    return line;
+}
+
 fn stripQuotes(value: []const u8) []const u8 {
     if (value.len >= 2 and ((value[0] == '"' and value[value.len - 1] == '"') or (value[0] == '\'' and value[value.len - 1] == '\''))) {
         return value[1 .. value.len - 1];
@@ -314,4 +340,50 @@ fn stripQuotes(value: []const u8) []const u8 {
 
 fn eqKey(a: []const u8, b: []const u8) bool {
     return std.mem.eql(u8, a, b);
+}
+
+test "quoted color hashes survive inline comments" {
+    var config = appconfig.defaults();
+    try applyConfigContents(std.testing.allocator, &config,
+        \\background_color: "#112233" # dark theme
+        \\textColor: '#aabbccdd' # camel alias
+    );
+    try std.testing.expectEqual(try parse.parseColorOptional("#112233"), config.background_color);
+    try std.testing.expectEqual(try parse.parseColorOptional("#aabbccdd"), config.text_color);
+}
+
+test "quoted text retains hashes and comment markers" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var config = appconfig.defaults();
+    try applyConfigContents(arena.allocator(), &config,
+        \\title: "Review #2" # trailing comment
+        \\prompt: 'Search #tag' # trailing comment
+        \\initial_query: "quote \" #inside" # trailing comment
+    );
+    try std.testing.expectEqualStrings("Review #2", config.title);
+    try std.testing.expectEqualStrings("Search #tag", config.placeholder);
+    try std.testing.expectEqualStrings(
+        \\quote \" #inside
+    , config.initial_query);
+}
+
+test "unquoted comments and key style conflicts retain behavior" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var config = appconfig.defaults();
+    try applyConfigContents(arena.allocator(), &config,
+        \\# full line comment
+        \\ignored # comment containing a colon:
+        \\title: Today's menu # trailing comment
+        \\preserve_order: true # retain order
+        \\background_color: none # no color
+    );
+    try std.testing.expectEqualStrings("Today's menu", config.title);
+    try std.testing.expect(config.search.preserve_order);
+    try std.testing.expectEqual(null, config.background_color);
+    try std.testing.expectError(error.ConfigKeyStyleConflict, applyConfigContents(std.testing.allocator, &config,
+        \\preserve_order: true
+        \\preserveOrder: false
+    ));
 }
