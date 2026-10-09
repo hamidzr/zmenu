@@ -93,10 +93,26 @@ pub fn controlTextViewDoCommandBySelector(
 pub fn onSubmit(target: objc.c.id, sel: objc.c.SEL, sender: objc.c.id) callconv(.c) void {
     _ = target;
     _ = sel;
-    _ = sender;
 
     const app_state = state.g_state orelse return;
+    // NSSearchField also fires its action when the query is cleared, so only
+    // accept field submits that come from Return/Enter
+    if (sender == app_state.text_field.value and !currentEventIsReturnKey()) return;
     logic.acceptSelection(app_state);
+}
+
+fn currentEventIsReturnKey() bool {
+    const NSEventTypeKeyDown: c_ulong = 10;
+    const kVK_Return: c_ushort = 36;
+    const kVK_ANSI_KeypadEnter: c_ushort = 76;
+
+    const app = objc.getClass("NSApplication").?.msgSend(objc.Object, "sharedApplication", .{});
+    const event = app.msgSend(objc.c.id, "currentEvent", .{});
+    if (event == null) return false;
+    const event_obj = objc.Object.fromId(event);
+    if (event_obj.msgSend(c_ulong, "type", .{}) != NSEventTypeKeyDown) return false;
+    const key_code = event_obj.msgSend(c_ushort, "keyCode", .{});
+    return key_code == kVK_Return or key_code == kVK_ANSI_KeypadEnter;
 }
 
 /// Table-wide tracking: the row under the pointer drives the hover highlight.
