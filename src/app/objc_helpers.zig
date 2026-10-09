@@ -122,14 +122,36 @@ pub fn iconImage(path: ?[:0]const u8, side: f64) ?objc.Object {
     return image;
 }
 
+// image files draw their own pixels; iconForFile: would show the generic
+// document icon for them
+const image_extensions = [_][]const u8{ ".png", ".ico", ".svg", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".tif", ".tiff", ".icns" };
+
+fn isImageFile(path: []const u8) bool {
+    const ext = std.fs.path.extension(path);
+    for (image_extensions) |candidate| {
+        if (std.ascii.eqlIgnoreCase(ext, candidate)) return true;
+    }
+    return false;
+}
+
 fn loadIconImage(path: [:0]const u8, side: f64) ?objc.Object {
     io_compat.accessAbsolute(path, .{}) catch return null;
 
-    const NSWorkspace = objc.getClass("NSWorkspace").?;
-    const workspace = NSWorkspace.msgSend(objc.Object, "sharedWorkspace", .{});
-    const image = workspace.msgSend(objc.Object, "iconForFile:", .{nsString(path.ptr)});
-    if (image.value == null) return null;
+    // both branches yield a +1 retained image
+    const image = if (isImageFile(path)) blk: {
+        const NSImage = objc.getClass("NSImage").?;
+        const loaded = NSImage.msgSend(objc.Object, "alloc", .{})
+            .msgSend(objc.Object, "initWithContentsOfFile:", .{nsString(path.ptr)});
+        if (loaded.value == null) return null;
+        break :blk loaded;
+    } else blk: {
+        const NSWorkspace = objc.getClass("NSWorkspace").?;
+        const workspace = NSWorkspace.msgSend(objc.Object, "sharedWorkspace", .{});
+        const icon = workspace.msgSend(objc.Object, "iconForFile:", .{nsString(path.ptr)});
+        if (icon.value == null) return null;
+        break :blk icon.retain();
+    };
     const side_len = @max(side, 1.0);
     image.msgSend(void, "setSize:", .{NSSize{ .width = side_len, .height = side_len }});
-    return image.retain();
+    return image;
 }

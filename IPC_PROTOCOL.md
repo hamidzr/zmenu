@@ -40,7 +40,7 @@ Where `<length>` is the decimal byte count of the JSON payload.
 - `items` is required for `set`, `append`, and `prepend`.
 - `id` is a stable identifier string (recommended for IPC-only mode).
 - `label` is required.
-- `icon` is optional. An absolute file or app bundle path displays the macOS workspace icon for that path. An absent, empty, relative, or missing path displays a blank icon cell.
+- `icon` is optional. An absolute file or app bundle path displays the macOS workspace icon for that path; image files (`.png`, `.ico`, `.svg`, `.jpg`, `.gif`, `.webp`, `.icns`, ...) display their own contents. An absent, empty, relative, or missing path displays a blank icon cell.
 - Extra fields on item objects are preserved for IPC-only output.
 
 ## Behavior
