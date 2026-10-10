@@ -4,7 +4,8 @@
 
 - zmenu is a native macOS AppKit menu selector replacing Go gmenu. It reads items from stdin or IPC and prints the accepted selection to stdout.
 - Requires macOS, Zig 0.17.0, and Xcode Command Line Tools for Apple SDK headers.
-- Objective-C bindings come from the immutable `zig-objc` fork revision in `build.zig.zon`; AppKit and Foundation are system frameworks.
+- Objective-C bindings come from the pinned `loftafi/zig-objc` fork revision in `build.zig.zon` (Zig 0.17 support pending upstream `mitchellh/zig-objc#36`); AppKit and Foundation are system frameworks. Fetched packages live in gitignored `zig-pkg/`.
+- Primary consumer is combo-switcher, which drives zmenu over IPC (`--ipc-only`) and maps selections by item `id`.
 
 ## Project Structure & Module Organization
 
@@ -15,11 +16,13 @@
 - `src/menu.zig` owns menu items and the model; `src/search.zig` and `src/search/` implement matching and scoring.
 - `src/ipc.zig` defines IPC messages and socket paths; `src/app/updates.zig` queues stdin/IPC updates for the GUI thread using `std.Io.Mutex`.
 - `src/cache.zig` persists query/selection state; `src/pid.zig` enforces a single instance per menu ID.
+- `src/exit_codes.zig`: 0 accept, 1 error (including empty stdin), 2 user cancel (Esc, focus loss). Older docs saying Esc exits 1 are stale.
 - `src/io_compat.zig` and `src/time_compat.zig` centralize I/O and clock helpers.
 - `build.zig` and `build.zig.zon` define the Zig build configuration and dependencies.
 - `justfile` provides shorthand commands for common workflows.
 - Build artifacts land in `zig-out/` with cache data in `.zig-cache/`.
-- `README.md` documents runtime behavior and CLI options; `IPC_PROTOCOL.md` defines framing and item schema.
+- `README.md` documents runtime behavior and CLI options; `IPC_PROTOCOL.md` defines framing and item schema; `docs/KEYBINDINGS.md` lists key handling.
+- `TODO.md` is the live gmenu-parity backlog. `PLAN.md`, `GMENU_V1_PLAN.md`, and `docs/ZMENU_IPC_ONLY_REQUIREMENTS.md` are historical planning/parity inventories; verify against code before trusting them. `tasks/lessons.md` holds project lessons.
 
 ## Build, Test, and Development Commands
 
@@ -27,7 +30,7 @@
 - `zig build run` / `just run`: build and launch the GUI; supply newline-separated stdin unless using `--ipc-only`.
 - `just dev`: launch with sample stdin items.
 - `zig build test` / `just test`: run search and streamed-update tests.
-- `just fmt`: format `src/` with Zig; `just check`: check source formatting and run tests.
+- `just fmt`: format `src/` with Zig; `just check`: `zig fmt --check src/` plus `zig build test` (tests are intentionally part of `check` here; both are fast and headless).
 - `just install`: build and copy both binaries to `~/.local/bin/`. Run after rebuilding to refresh installed copies.
 - `just visual`: capture/compare a UI snapshot; `UPDATE_SNAPSHOT=1` refreshes the baseline.
 - `just bench`, `just render-bench`, and `just startup-bench`: process, rendering, and external-launch keyboard benchmarks respectively.
@@ -42,14 +45,15 @@
 
 ## Testing Guidelines
 
-- Use Zig `test` blocks. `build.zig` wires `src/search.zig` and `src/updates_test.zig` into the test step.
+- Use Zig `test` blocks. `build.zig` only has two test roots: `src/search.zig` (pulls in `src/search/`) and `src/updates_test.zig`, which also pulls in `src/cli/config_file.zig` tests via `test { _ = @import(...); }`. Tests in other files do not run unless imported from a root; add the import there (or a new root in `build.zig`).
+- Test roots cannot import AppKit/objc code; keep testable logic in plain Zig modules.
 - Prefer small, focused tests around text input handling and event flow.
 - Visual tests use `scripts/visual_test.sh`, sample input, and `samples/visual_baseline.png`; they require macOS Accessibility and Screen Recording permissions.
 - Focus-changing GUI and keyboard-injection tests remain paused at the user's request. Resume only when explicitly requested; see `docs/STARTUP_PERFORMANCE.md`. Compilation, static checks, and headless tests may continue.
 
 ## Commit & Pull Request Guidelines
 
-- Commit history uses short, informal, lowercase summaries; follow that style and describe behavior changes plainly.
+- Commit history uses short lowercase summaries, recently often with conventional prefixes (`fix:`, `docs:`, `ui:`); describe behavior changes plainly.
 - PRs should include a brief summary, how to run/verify (`zig build run`), and any screenshots or recordings if the UI changes.
 
 ## Configuration & Runtime Tips
@@ -57,7 +61,8 @@
 - Settings precedence is CLI flags > `GMENU_*` environment variables > config file > defaults.
 - Config filename is `config.yaml`. Lookup prefers menu-scoped files, then base files under `~/.config/gmenu/`, `~/.gmenu/`, and the platform/XDG config directory; see `src/cli/paths.zig` for exact order.
 - CLI `--menu-id` selects the config namespace before environment overrides are applied. `--init-config` writes defaults and exits.
-- Config parsing supports documented snake_case/camelCase aliases; keep aliases and precedence intact when adding settings.
+- Config parsing (`src/cli/config_file.zig`) is a hand-rolled flat key/value YAML subset, not a full YAML library; quoted values keep `#`, unquoted `#` starts a comment. snake_case/camelCase aliases live in `config_key_variants`.
+- Adding a setting touches `src/config.zig` (default), `src/cli/args.zig`, `src/cli/env.zig` (`GMENU_*`), and `src/cli/config_file.zig`; keep aliases and precedence intact, update README.
 - GUI search methods are `direct`, `fuzzy`, `fuzzy1`, `fuzzy3`, and `default` (`fuzzy`). Regex and `exact` modes are unsupported.
 - Numeric selection defaults to `auto`, enabling shortcuts for at most nine filtered items; a query ending in a digit disables shortcuts. Preserve legacy `no_numeric_selection` aliases.
 - Classic stdin input is limited to 16 MiB; followed stdin skips lines exceeding 64 KiB. `--auto-accept` accepts a singleton immediately in classic mode, waits for EOF in `--follow-stdin`, and stays disabled in `--ipc-only`.
