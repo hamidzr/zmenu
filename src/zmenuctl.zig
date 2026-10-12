@@ -2,6 +2,7 @@ const std = @import("std");
 const io_compat = @import("io_compat.zig");
 const ipc = @import("ipc.zig");
 const menu = @import("menu.zig");
+const menu_id_check = @import("menu_id.zig");
 
 pub fn main(init: std.process.Init) !void {
     const allocator = init.arena.allocator();
@@ -38,6 +39,11 @@ pub fn main(init: std.process.Init) !void {
         cmd_index = i;
         break;
     }
+
+    menu_id_check.validate(menu_id) catch {
+        io_compat.stderrPrint("zmenuctl: invalid menu id (use letters, digits, '-', '_', '.'; max 64; no leading dot)\n", .{}) catch {};
+        std.process.exit(1);
+    };
 
     if (cmd_index == null) {
         return usage();

@@ -1,6 +1,7 @@
 const std = @import("std");
 const appconfig = @import("../config.zig");
 const io_compat = @import("../io_compat.zig");
+const menu_id = @import("../menu_id.zig");
 const parse = @import("parse.zig");
 
 pub fn applyEnv(allocator: std.mem.Allocator, config: *appconfig.Config) !void {
@@ -15,6 +16,7 @@ pub fn applyEnv(allocator: std.mem.Allocator, config: *appconfig.Config) !void {
         if (err != error.EnvironmentVariableNotFound) return err;
     }
     if (envValue(allocator, "GMENU_MENU_ID")) |value| {
+        try menu_id.validate(value);
         config.menu_id = value;
     } else |err| {
         if (err != error.EnvironmentVariableNotFound) return err;

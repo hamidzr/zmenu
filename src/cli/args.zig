@@ -1,9 +1,11 @@
 const std = @import("std");
 const appconfig = @import("../config.zig");
+const menu_id = @import("../menu_id.zig");
 const parse = @import("parse.zig");
 
 pub fn resolveMenuIDFromArgs(allocator: std.mem.Allocator, args: []const [:0]const u8) !?[:0]const u8 {
     if (findArgValue(args, "--menu-id", "-m")) |value| {
+        try menu_id.validate(value);
         return try allocator.dupeSentinel(u8, value, 0);
     }
     return null;
@@ -17,6 +19,7 @@ pub fn applyArgs(allocator: std.mem.Allocator, args: []const [:0]const u8, confi
         if (std.mem.eql(u8, arg, "--menu-id") or std.mem.eql(u8, arg, "-m")) {
             i += 1;
             if (i >= args.len) return error.MissingValue;
+            try menu_id.validate(args[i]);
             config.menu_id = try allocator.dupeSentinel(u8, args[i], 0);
             continue;
         }

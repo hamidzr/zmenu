@@ -12,7 +12,7 @@ Native macOS AppKit MVP for the gmenu replacement (zmenu).
 - Keys 1-9 accept the corresponding item when numeric selection is active.
 - Ctrl+L clears the query.
 - A pid file in the temp dir prevents multiple instances per menu id.
-- When `menu_id` is set, the last query + selection are stored under `~/.cache/gmenu/<menu_id>/cache.yaml`.
+- When `menu_id` is set, the last query + selection are stored under `~/.cache/gmenu/<menu_id>/cache.yaml`. Cache dir is created 0700 and cache.yaml / pid files 0600.
 
 ## Requirements
 - macOS
@@ -75,7 +75,7 @@ Sizes are floating-point points.
 | --- | --- | --- |
 | `GMENU_TITLE` | Window title | `gmenu` |
 | `GMENU_PROMPT` | Search field placeholder (terminal mode prompt) | `Search` |
-| `GMENU_MENU_ID` | Menu ID for cache, PID lock, and IPC socket names. Applied after config load, so only `--menu-id` selects the scoped config file | empty |
+| `GMENU_MENU_ID` | Menu ID (letters, digits, `-`, `_`, `.`; max 64; no leading dot) for cache, PID lock, and IPC socket names. Applied after config load, so only `--menu-id` selects the scoped config file | empty |
 | `GMENU_INITIAL_QUERY` | Prefilled query | empty (cached last query when a menu ID is set) |
 | `GMENU_TERMINAL_MODE` | Use terminal mode instead of the GUI | `false` |
 | `GMENU_FOLLOW_STDIN` | Keep reading stdin and stream new items | `false` |

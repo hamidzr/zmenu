@@ -1,6 +1,7 @@
 const std = @import("std");
 const appconfig = @import("../config.zig");
 const io_compat = @import("../io_compat.zig");
+const menu_id_check = @import("../menu_id.zig");
 const parse = @import("parse.zig");
 const paths = @import("paths.zig");
 
@@ -173,6 +174,7 @@ fn applyConfigKV(allocator: std.mem.Allocator, config: *appconfig.Config, key: [
         return;
     }
     if (eqKey(key, "menu_id") or eqKey(key, "menuId")) {
+        try menu_id_check.validate(value);
         config.menu_id = try allocator.dupeSentinel(u8, value, 0);
         return;
     }
