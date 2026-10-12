@@ -44,13 +44,6 @@ pub fn filePrint(file: anytype, comptime fmt: []const u8, args: anytype) !void {
     try std.Io.File.writeStreamingAll(file_value, globalIo(), msg);
 }
 
-pub fn printFd(fd: std.posix.fd_t, comptime fmt: []const u8, args: anytype) !void {
-    try filePrint(.{
-        .handle = fd,
-        .flags = .{ .nonblocking = false },
-    }, fmt, args);
-}
-
 pub fn writeAll(fd: std.posix.fd_t, bytes: []const u8) !void {
     const file: std.Io.File = .{
         .handle = fd,
