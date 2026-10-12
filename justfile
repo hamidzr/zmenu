@@ -1,5 +1,12 @@
 # zmenu justfile
 
+# fetch zig package dependencies
+deps:
+	zig build --fetch
+
+# alias for deps
+get-deps: deps
+
 build:
 	zig build
 

@@ -26,6 +26,7 @@
 
 ## Build, Test, and Development Commands
 
+- `just deps`: fetch Zig package dependencies into `zig-pkg/` (`zig build --fetch`).
 - `zig build` / `just build`: build both `zmenu` and `zmenuctl` into `zig-out/bin/`.
 - `zig build run` / `just run`: build and launch the GUI; supply newline-separated stdin unless using `--ipc-only`.
 - `just dev`: launch with sample stdin items.
