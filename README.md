@@ -80,7 +80,7 @@ Sizes are floating-point points.
 | `GMENU_TERMINAL_MODE` | Use terminal mode instead of the GUI | `false` |
 | `GMENU_FOLLOW_STDIN` | Keep reading stdin and stream new items | `false` |
 | `GMENU_IPC_ONLY` | Ignore stdin; take items over IPC and print the JSON item on accept | `false` |
-| `GMENU_UNIQUE` | Drop duplicate stdin items | `false` |
+| `GMENU_UNIQUE` | Drop items with duplicate labels (stdin and IPC updates) | `false` |
 | `GMENU_MIN_WIDTH` | Initial window width, capped by max width | `800` |
 | `GMENU_MIN_HEIGHT` | Initial window height, capped by max height and snapped to whole rows | `450` |
 | `GMENU_MAX_WIDTH` | Max window width (`0` disables the cap) | `1920` |
