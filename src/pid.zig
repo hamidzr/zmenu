@@ -12,7 +12,7 @@ pub fn create(allocator: std.mem.Allocator, name: []const u8) ![]const u8 {
         return error.AlreadyRunning;
     }
 
-    const file = io_compat.createFileAbsolute(pid_path, .{ .exclusive = true, .truncate = true }) catch |err| switch (err) {
+    const file = io_compat.createFileAbsolute(pid_path, .{ .exclusive = true, .truncate = true, .permissions = std.Io.File.Permissions.fromMode(0o600) }) catch |err| switch (err) {
         error.PathAlreadyExists => return error.AlreadyRunning,
         else => return err,
     };

@@ -56,10 +56,10 @@ pub fn load(allocator: std.mem.Allocator, menu_id: []const u8) !?State {
 
 pub fn save(allocator: std.mem.Allocator, menu_id: []const u8, state: State) !void {
     const dir = try cacheDir(allocator, menu_id);
-    try std.Io.Dir.cwd().createDirPath(io_compat.globalIo(), dir);
+    _ = try std.Io.Dir.cwd().createDirPathStatus(io_compat.globalIo(), dir, std.Io.File.Permissions.fromMode(0o700));
     const path = try cacheFilePath(allocator, menu_id);
 
-    const file = try io_compat.createFileAbsolute(path, .{ .truncate = true });
+    const file = try io_compat.createFileAbsolute(path, .{ .truncate = true, .permissions = std.Io.File.Permissions.fromMode(0o600) });
     defer io_compat.closeFile(file);
 
     try io_compat.filePrint(
