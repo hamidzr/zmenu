@@ -66,3 +66,15 @@ fn distanceScore(distance: usize) i32 {
     const capped: i32 = if (distance > std.math.maxInt(i32)) std.math.maxInt(i32) else @as(i32, @intCast(distance));
     return -capped;
 }
+
+test "fallback keeps labels at the length-difference boundary" {
+    var buf: [8]types.Match = undefined;
+    var matches = std.ArrayList(types.Match).initBuffer(&buf);
+    // "ab" -> "abcd" is two insertions; "abcde" is three and must be dropped
+    appendFallbackMatches(&.{ "abcd", "abcde", "xb", "a" }, "ab", &matches);
+    try std.testing.expectEqual(@as(usize, 3), matches.items.len);
+    try std.testing.expectEqual(@as(usize, 0), matches.items[0].index);
+    try std.testing.expectEqual(@as(i32, -2), matches.items[0].score);
+    try std.testing.expectEqual(@as(usize, 2), matches.items[1].index);
+    try std.testing.expectEqual(@as(usize, 3), matches.items[2].index);
+}
