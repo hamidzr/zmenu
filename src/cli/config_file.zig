@@ -85,7 +85,7 @@ fn applyConfigContents(allocator: std.mem.Allocator, config: *appconfig.Config, 
             seen_keys[canonical_index] = key;
         }
 
-        try applyConfigKV(allocator, config, key, value);
+        try applyConfigKV(allocator, config, config_key_variants[canonical_index].canonical, value);
     }
 }
 
@@ -164,6 +164,7 @@ fn canonicalKeyIndex(key: []const u8) ?usize {
     return null;
 }
 
+/// key is the canonical snake_case name
 fn applyConfigKV(allocator: std.mem.Allocator, config: *appconfig.Config, key: []const u8, value: []const u8) !void {
     if (eqKey(key, "title")) {
         config.title = try allocator.dupeSentinel(u8, value, 0);
@@ -173,28 +174,28 @@ fn applyConfigKV(allocator: std.mem.Allocator, config: *appconfig.Config, key: [
         config.placeholder = try allocator.dupeSentinel(u8, value, 0);
         return;
     }
-    if (eqKey(key, "menu_id") or eqKey(key, "menuId")) {
+    if (eqKey(key, "menu_id")) {
         try menu_id_check.validate(value);
         config.menu_id = try allocator.dupeSentinel(u8, value, 0);
         return;
     }
-    if (eqKey(key, "initial_query") or eqKey(key, "initialQuery")) {
+    if (eqKey(key, "initial_query")) {
         config.initial_query = try allocator.dupeSentinel(u8, value, 0);
         return;
     }
-    if (eqKey(key, "search_method") or eqKey(key, "searchMethod")) {
+    if (eqKey(key, "search_method")) {
         try parse.applySearchMethod(config, value);
         return;
     }
-    if (eqKey(key, "terminal_mode") or eqKey(key, "terminalMode")) {
+    if (eqKey(key, "terminal_mode")) {
         config.terminal_mode = try parse.parseBool(value);
         return;
     }
-    if (eqKey(key, "follow_stdin") or eqKey(key, "followStdin")) {
+    if (eqKey(key, "follow_stdin")) {
         config.follow_stdin = try parse.parseBool(value);
         return;
     }
-    if (eqKey(key, "ipc_only") or eqKey(key, "ipcOnly")) {
+    if (eqKey(key, "ipc_only")) {
         config.ipc_only = try parse.parseBool(value);
         return;
     }
@@ -202,32 +203,32 @@ fn applyConfigKV(allocator: std.mem.Allocator, config: *appconfig.Config, key: [
         config.unique = try parse.parseBool(value);
         return;
     }
-    if (eqKey(key, "preserve_order") or eqKey(key, "preserveOrder")) {
+    if (eqKey(key, "preserve_order")) {
         config.search.preserve_order = try parse.parseBool(value);
         return;
     }
-    if (eqKey(key, "levenshtein_fallback") or eqKey(key, "levenshteinFallback")) {
+    if (eqKey(key, "levenshtein_fallback")) {
         config.search.levenshtein_fallback = try parse.parseBool(value);
         return;
     }
-    if (eqKey(key, "auto_accept") or eqKey(key, "autoAccept")) {
+    if (eqKey(key, "auto_accept")) {
         config.auto_accept = try parse.parseBool(value);
         return;
     }
-    if (eqKey(key, "accept_custom_selection") or eqKey(key, "acceptCustomSelection")) {
+    if (eqKey(key, "accept_custom_selection")) {
         config.accept_custom_selection = try parse.parseBool(value);
         return;
     }
-    if (eqKey(key, "numeric_selection_mode") or eqKey(key, "numericSelectionMode")) {
+    if (eqKey(key, "numeric_selection_mode")) {
         config.numeric_selection_mode = try parse.parseNumericSelectionMode(value);
         return;
     }
-    if (eqKey(key, "no_numeric_selection") or eqKey(key, "noNumericSelection")) {
+    if (eqKey(key, "no_numeric_selection")) {
         const disabled = try parse.parseBool(value);
         config.numeric_selection_mode = if (disabled) .off else .on;
         return;
     }
-    if (eqKey(key, "show_icons") or eqKey(key, "showIcons")) {
+    if (eqKey(key, "show_icons")) {
         config.show_icons = try parse.parseBool(value);
         return;
     }
@@ -235,27 +236,27 @@ fn applyConfigKV(allocator: std.mem.Allocator, config: *appconfig.Config, key: [
         config.search.limit = try std.fmt.parseInt(usize, value, 10);
         return;
     }
-    if (eqKey(key, "min_width") or eqKey(key, "minWidth")) {
+    if (eqKey(key, "min_width")) {
         config.window_width = try std.fmt.parseFloat(f64, value);
         return;
     }
-    if (eqKey(key, "min_height") or eqKey(key, "minHeight")) {
+    if (eqKey(key, "min_height")) {
         config.window_height = try std.fmt.parseFloat(f64, value);
         return;
     }
-    if (eqKey(key, "max_width") or eqKey(key, "maxWidth")) {
+    if (eqKey(key, "max_width")) {
         config.max_width = try std.fmt.parseFloat(f64, value);
         return;
     }
-    if (eqKey(key, "max_height") or eqKey(key, "maxHeight")) {
+    if (eqKey(key, "max_height")) {
         config.max_height = try std.fmt.parseFloat(f64, value);
         return;
     }
-    if (eqKey(key, "row_height") or eqKey(key, "rowHeight")) {
+    if (eqKey(key, "row_height")) {
         config.row_height = try std.fmt.parseFloat(f64, value);
         return;
     }
-    if (eqKey(key, "field_height") or eqKey(key, "fieldHeight")) {
+    if (eqKey(key, "field_height")) {
         config.field_height = try std.fmt.parseFloat(f64, value);
         return;
     }
@@ -263,19 +264,19 @@ fn applyConfigKV(allocator: std.mem.Allocator, config: *appconfig.Config, key: [
         config.padding = try std.fmt.parseFloat(f64, value);
         return;
     }
-    if (eqKey(key, "numeric_column_width") or eqKey(key, "numericColumnWidth")) {
+    if (eqKey(key, "numeric_column_width")) {
         config.numeric_column_width = try std.fmt.parseFloat(f64, value);
         return;
     }
-    if (eqKey(key, "icon_column_width") or eqKey(key, "iconColumnWidth")) {
+    if (eqKey(key, "icon_column_width")) {
         config.icon_column_width = try std.fmt.parseFloat(f64, value);
         return;
     }
-    if (eqKey(key, "alternate_rows") or eqKey(key, "alternateRows")) {
+    if (eqKey(key, "alternate_rows")) {
         config.alternate_rows = try parse.parseBool(value);
         return;
     }
-    if (eqKey(key, "corner_radius") or eqKey(key, "cornerRadius")) {
+    if (eqKey(key, "corner_radius")) {
         config.corner_radius = try std.fmt.parseFloat(f64, value);
         return;
     }
@@ -283,27 +284,27 @@ fn applyConfigKV(allocator: std.mem.Allocator, config: *appconfig.Config, key: [
         config.vibrancy = try parse.parseBool(value);
         return;
     }
-    if (eqKey(key, "background_color") or eqKey(key, "backgroundColor")) {
+    if (eqKey(key, "background_color")) {
         config.background_color = try parse.parseColorOptional(value);
         return;
     }
-    if (eqKey(key, "list_background_color") or eqKey(key, "listBackgroundColor")) {
+    if (eqKey(key, "list_background_color")) {
         config.list_background_color = try parse.parseColorOptional(value);
         return;
     }
-    if (eqKey(key, "field_background_color") or eqKey(key, "fieldBackgroundColor")) {
+    if (eqKey(key, "field_background_color")) {
         config.field_background_color = try parse.parseColorOptional(value);
         return;
     }
-    if (eqKey(key, "text_color") or eqKey(key, "textColor")) {
+    if (eqKey(key, "text_color")) {
         config.text_color = try parse.parseColorOptional(value);
         return;
     }
-    if (eqKey(key, "secondary_text_color") or eqKey(key, "secondaryTextColor")) {
+    if (eqKey(key, "secondary_text_color")) {
         config.secondary_text_color = try parse.parseColorOptional(value);
         return;
     }
-    if (eqKey(key, "selection_color") or eqKey(key, "selectionColor")) {
+    if (eqKey(key, "selection_color")) {
         config.selection_color = try parse.parseColorOptional(value);
         return;
     }
