@@ -25,6 +25,9 @@ pub fn appendFallbackMatches(labels: []const []const u8, query: []const u8, matc
             }
         }
         if (already_matched) continue;
+        // distance is at least the length gap, so skip guaranteed misses
+        const len_gap = @max(label.len, query.len) - @min(label.len, query.len);
+        if (len_gap > levenshtein_distance_threshold) continue;
 
         const distance = levenshteinDistance(query, label, row_buffer[0 .. label.len + 1], ignore_case);
         if (distance <= levenshtein_distance_threshold) {
