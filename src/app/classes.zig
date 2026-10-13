@@ -1,5 +1,6 @@
 const objc = @import("objc");
 const callbacks = @import("callbacks.zig");
+const render_bench = @import("render_bench.zig");
 
 fn inputHandlerClass() objc.Class {
     if (objc.getClass("ZigInputHandler")) |cls| return cls;
@@ -18,7 +19,7 @@ fn inputHandlerClass() objc.Class {
     if (!cls.addMethod("onUpdateTimer:", callbacks.onUpdateTimer)) {
         @panic("failed to add onUpdateTimer: method");
     }
-    if (!cls.addMethod("onRenderBench:", callbacks.onRenderBench)) {
+    if (!cls.addMethod("onRenderBench:", render_bench.onRenderBench)) {
         @panic("failed to add onRenderBench: method");
     }
     if (!cls.addMethod("onStartupProfileTimer:", callbacks.onStartupProfileTimer)) {
