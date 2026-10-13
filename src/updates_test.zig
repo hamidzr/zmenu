@@ -11,6 +11,7 @@ test {
     _ = @import("cli/paths.zig");
     _ = @import("cache.zig");
     _ = @import("pid.zig");
+    _ = @import("cli/parse.zig");
 }
 
 // A set must become visible to the UI in one drain, never item by item.

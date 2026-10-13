@@ -88,3 +88,38 @@ fn parseHexColor(value: []const u8) !appconfig.Color {
 fn parseHexByte(value: []const u8) !u8 {
     return std.fmt.parseInt(u8, value, 16);
 }
+
+test "search method names match case-insensitively" {
+    var config = appconfig.defaults();
+    for ([_][]const u8{ "direct", "FUZZY", "fuzzy1", "Fuzzy3", "default" }, [_]@TypeOf(config.search.method){ .direct, .fuzzy, .fuzzy1, .fuzzy3, .default }) |name, expected| {
+        try applySearchMethod(&config, name);
+        try std.testing.expectEqual(expected, config.search.method);
+    }
+    try std.testing.expectError(error.InvalidSearchMethod, applySearchMethod(&config, "regex"));
+}
+
+test "bool and numeric selection words" {
+    for ([_][]const u8{ "true", "1", "YES", "on" }) |word| {
+        try std.testing.expect(try parseBool(word));
+        try std.testing.expectEqual(appconfig.NumericSelectionMode.on, try parseNumericSelectionMode(word));
+    }
+    for ([_][]const u8{ "false", "0", "No", "OFF" }) |word| {
+        try std.testing.expect(!try parseBool(word));
+        try std.testing.expectEqual(appconfig.NumericSelectionMode.off, try parseNumericSelectionMode(word));
+    }
+    try std.testing.expectEqual(appconfig.NumericSelectionMode.auto, try parseNumericSelectionMode("Auto"));
+    try std.testing.expectError(error.InvalidBool, parseBool("auto"));
+    try std.testing.expectError(error.InvalidBool, parseBool("maybe"));
+    try std.testing.expectError(error.InvalidNumericSelectionMode, parseNumericSelectionMode("maybe"));
+}
+
+test "colors parse hex with optional alpha and none" {
+    const c = (try parseColorOptional(" #ff000080 ")).?;
+    try std.testing.expectEqual(@as(f64, 1.0), c.r);
+    try std.testing.expectEqual(@as(f64, 0.0), c.g);
+    try std.testing.expectEqual(@as(f64, 128.0 / 255.0), c.a);
+    try std.testing.expectEqual(@as(f64, 1.0), (try parseColorOptional("00ff00")).?.a);
+    try std.testing.expect(try parseColorOptional("none") == null);
+    try std.testing.expect(try parseColorOptional("") == null);
+    try std.testing.expectError(error.InvalidColor, parseColorOptional("#abc"));
+}
