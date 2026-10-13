@@ -50,9 +50,7 @@ pub fn main(init: std.process.Init) !void {
     }
 
     const cmd = args[cmd_index.?];
-    if (!isSupportedCommand(cmd)) {
-        return usage();
-    }
+    const command = ipc.parseCommand(cmd) orelse return usage();
 
     const item_args = args[cmd_index.? + 1 ..];
     for (item_args) |arg| {
@@ -71,7 +69,7 @@ pub fn main(init: std.process.Init) !void {
         }
     }
 
-    if (items.items.len == 0 and !std.ascii.eqlIgnoreCase(cmd, "set")) {
+    if (items.items.len == 0 and command != .set) {
         io_compat.stderrPrint("zmenuctl: no items provided\n", .{}) catch {};
         std.process.exit(1);
     }
@@ -98,10 +96,6 @@ pub fn main(init: std.process.Init) !void {
     try writer.interface.writeAll(header);
     try writer.interface.writeAll(payload);
     try writer.interface.flush();
-}
-
-fn isSupportedCommand(cmd: []const u8) bool {
-    return std.ascii.eqlIgnoreCase(cmd, "set") or std.ascii.eqlIgnoreCase(cmd, "append") or std.ascii.eqlIgnoreCase(cmd, "prepend");
 }
 
 fn readItemsFromStdin(allocator: std.mem.Allocator, items: *std.ArrayList(ipc.Item)) !void {

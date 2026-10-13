@@ -283,7 +283,11 @@ fn handleIpcPayload(queue: *UpdateQueue, payload: []const u8) void {
     const parsed = std.json.parseFromSlice(ipc.Message, std.heap.c_allocator, payload, .{ .ignore_unknown_fields = true }) catch return;
     defer parsed.deinit();
 
-    const kind = updateKindFromCommand(parsed.value.cmd) orelse return;
+    const kind: UpdateKind = switch (ipc.parseCommand(parsed.value.cmd) orelse return) {
+        .set => .set,
+        .append => .append,
+        .prepend => .prepend,
+    };
     const items = parsed.value.items orelse return;
 
     const batch_id = queue.nextBatchId();
@@ -306,13 +310,6 @@ fn handleIpcPayload(queue: *UpdateQueue, payload: []const u8) void {
         return;
     }
     queue.pushBatchOwned(batch.items);
-}
-
-fn updateKindFromCommand(command: []const u8) ?UpdateKind {
-    if (std.ascii.eqlIgnoreCase(command, "set")) return .set;
-    if (std.ascii.eqlIgnoreCase(command, "append")) return .append;
-    if (std.ascii.eqlIgnoreCase(command, "prepend")) return .prepend;
-    return null;
 }
 
 test "oversized stdin line is skipped and later lines survive" {

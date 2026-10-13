@@ -7,6 +7,7 @@ test {
     _ = @import("menu.zig");
     _ = @import("cli/args.zig");
     _ = @import("accept.zig");
+    _ = @import("ipc.zig");
 }
 
 // A set must become visible to the UI in one drain, never item by item.
