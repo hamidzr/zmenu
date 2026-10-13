@@ -22,35 +22,27 @@ pub fn filterIndices(
         for (labels, 0..) |_, idx| {
             matches.appendAssumeCapacity(.{ .index = idx, .score = 0 });
         }
-        const limit = effectiveLimit(opts.limit, matches.items.len);
-        var i: usize = 0;
-        while (i < limit) : (i += 1) {
-            out_indices.appendAssumeCapacity(matches.items[i].index);
+    } else {
+        switch (opts.method) {
+            .direct => fuzzy.directSearch(labels, query, matches),
+            .fuzzy, .default => fuzzy.fuzzyTokenSearch(labels, trimmed, 2, matches, out_indices),
+            .fuzzy3 => fuzzy.fuzzySearchBrute(labels, query, 2, matches),
+            .fuzzy1 => fuzzy.fuzzyScoreSearch(labels, query, opts.preserve_order, matches),
         }
-        return;
+
+        if (opts.levenshtein_fallback and matches.items.len < 3) {
+            levenshtein.appendFallbackMatches(labels, trimmed, matches);
+            std.sort.insertion(Match, matches.items, {}, fuzzy.scoreDescIndexAsc);
+        }
+        if (opts.preserve_order) {
+            std.sort.insertion(Match, matches.items, {}, fuzzy.indexAsc);
+        }
+        // token search borrows out_indices as scratch
+        out_indices.clearRetainingCapacity();
     }
 
-    switch (opts.method) {
-        .direct => fuzzy.directSearch(labels, query, matches),
-        .fuzzy => fuzzy.fuzzyTokenSearch(labels, trimmed, 2, matches, out_indices),
-        .default => fuzzy.fuzzyTokenSearch(labels, trimmed, 2, matches, out_indices),
-        .fuzzy3 => fuzzy.fuzzySearchBrute(labels, query, 2, matches),
-        .fuzzy1 => fuzzy.fuzzyScoreSearch(labels, query, opts.preserve_order, matches),
-    }
-
-    if (opts.levenshtein_fallback and matches.items.len < 3 and trimmed.len > 0) {
-        levenshtein.appendFallbackMatches(labels, trimmed, matches);
-        std.sort.insertion(Match, matches.items, {}, fuzzy.scoreDescIndexAsc);
-    }
-    if (opts.preserve_order) {
-        std.sort.insertion(Match, matches.items, {}, fuzzy.indexAsc);
-    }
-
-    out_indices.clearRetainingCapacity();
-    const limit = effectiveLimit(opts.limit, matches.items.len);
-    var i: usize = 0;
-    while (i < limit) : (i += 1) {
-        out_indices.appendAssumeCapacity(matches.items[i].index);
+    for (matches.items[0..effectiveLimit(opts.limit, matches.items.len)]) |match| {
+        out_indices.appendAssumeCapacity(match.index);
     }
 }
 
