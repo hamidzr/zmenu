@@ -74,12 +74,8 @@ fn userConfigDir(allocator: std.mem.Allocator, home: ?[]const u8) !?[]const u8 {
 }
 
 fn pathExists(path: []const u8) bool {
-    if (io_compat.accessAbsolute(path, .{})) |_| {
-        return true;
-    } else |err| switch (err) {
-        error.FileNotFound => return false,
-        else => return false,
-    }
+    io_compat.accessAbsolute(path, .{}) catch return false;
+    return true;
 }
 
 test "config lookup prefers scoped, then home before xdg" {
