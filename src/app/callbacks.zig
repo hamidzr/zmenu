@@ -250,18 +250,7 @@ pub fn tableViewShouldSelectRow(
     _ = table;
 
     const app_state = state.g_state orelse return true;
-    if (row < 0) {
-        app_state.model.selected = -1;
-        return true;
-    }
-
-    const row_index: usize = @intCast(row);
-    if (row_index >= app_state.model.filtered.items.len) {
-        app_state.model.selected = -1;
-        return true;
-    }
-
-    app_state.model.selected = @intCast(row);
+    syncSelectedRow(app_state, row);
     return true;
 }
 
@@ -274,19 +263,13 @@ pub fn tableViewSelectionDidChange(target: objc.c.id, sel: objc.c.SEL, notificat
 
     const notification_obj = objc.Object.fromId(notification);
     const table = notification_obj.msgSend(objc.Object, "object", .{});
-    const selected_row = table.msgSend(c_long, "selectedRow", .{});
-    if (selected_row < 0) {
-        app_state.model.selected = -1;
-        return;
-    }
+    syncSelectedRow(app_state, table.msgSend(c_long, "selectedRow", .{}));
+}
 
-    const row_index: usize = @intCast(selected_row);
-    if (row_index >= app_state.model.filtered.items.len) {
-        app_state.model.selected = -1;
-        return;
-    }
-
-    app_state.model.selected = @intCast(selected_row);
+/// mirror a table row into the model, clearing it when out of range
+fn syncSelectedRow(app_state: *state.AppState, row: c_long) void {
+    const in_range = row >= 0 and @as(usize, @intCast(row)) < app_state.model.filtered.items.len;
+    app_state.model.selected = if (in_range) @intCast(row) else -1;
 }
 
 pub fn cancelOperation(target: objc.c.id, sel: objc.c.SEL, sender: objc.c.id) callconv(.c) void {
