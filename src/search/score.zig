@@ -1,4 +1,5 @@
 const std = @import("std");
+const util = @import("util.zig");
 
 const first_char_match_bonus: i32 = 10;
 const match_following_separator_bonus: i32 = 20;
@@ -25,7 +26,7 @@ pub fn sahilmScore(pattern: []const u8, candidate: []const u8) ?i32 {
     while (j < candidate.len) : (j += 1) {
         const candidate_char = candidate[j];
 
-        if (pattern_index < pattern.len and equalFold(candidate_char, pattern[pattern_index])) {
+        if (pattern_index < pattern.len and util.charsEqual(candidate_char, pattern[pattern_index], true)) {
             var score: i32 = 0;
             if (j == 0) score += first_char_match_bonus;
             if (std.ascii.isLower(last) and std.ascii.isUpper(candidate_char)) {
@@ -54,7 +55,7 @@ pub fn sahilmScore(pattern: []const u8, candidate: []const u8) ?i32 {
             nextc = candidate[j + 1];
         }
 
-        if (pattern_index < pattern.len and (equalFold(nextp, nextc) or nextc == 0)) {
+        if (pattern_index < pattern.len and (util.charsEqual(nextp, nextc, true) or nextc == 0)) {
             if (matched_index > -1) {
                 if (matched_count == 0) {
                     const penalty = @as(i32, @intCast(matched_index)) * unmatched_leading_char_penalty;
@@ -90,9 +91,4 @@ fn isSeparator(c: u8) bool {
         '/', '-', '_', ' ', '.', '\\' => true,
         else => false,
     };
-}
-
-fn equalFold(a: u8, b: u8) bool {
-    if (a == b) return true;
-    return std.ascii.toLower(a) == std.ascii.toLower(b);
 }
