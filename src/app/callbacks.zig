@@ -68,7 +68,6 @@ pub fn controlTextViewDoCommandBySelector(
 
     if (command == objc.sel("cancelOperation:").value) {
         logic.quit(app_state, exit_codes.user_canceled);
-        return true;
     }
     if (command == objc.sel("moveUp:").value) {
         logic.moveSelection(app_state, -1);

@@ -3,7 +3,6 @@ const objc = @import("objc");
 const cache = @import("../cache.zig");
 const exit_codes = @import("../exit_codes.zig");
 const io_compat = @import("../io_compat.zig");
-const menu = @import("../menu.zig");
 const pid = @import("../pid.zig");
 const time_compat = @import("../time_compat.zig");
 const objc_helpers = @import("objc_helpers.zig");
@@ -17,7 +16,7 @@ pub const AutoAcceptTrigger = enum {
     stream_close,
 };
 
-pub fn quit(app_state: *state.AppState, code: u8) void {
+pub fn quit(app_state: *state.AppState, code: u8) noreturn {
     if (app_state.pid_path) |path| {
         pid.remove(path);
     }
@@ -102,37 +101,20 @@ pub fn saveCache(app_state: *state.AppState, selection: []const u8) void {
 }
 
 pub fn acceptSelection(app_state: *state.AppState) void {
-    if (app_state.config.ipc_only) {
-        if (app_state.model.selectedItem()) |item| {
-            outputAndQuit(app_state, item.label, item.ipc_payload orelse item.label);
-        }
-        if (app_state.model.filtered.items.len == 0) {
-            quit(app_state, exit_codes.user_canceled);
-        }
-        const item = firstFilteredItem(app_state);
-        outputAndQuit(app_state, item.label, item.ipc_payload orelse item.label);
-    }
-
     if (app_state.model.filtered.items.len == 0) {
+        if (app_state.config.ipc_only) quit(app_state, exit_codes.user_canceled);
         if (!app_state.config.accept_custom_selection) return;
         const query = currentQuery(app_state);
         outputAndQuit(app_state, query, query);
     }
 
-    if (app_state.model.selectedItem()) |item| {
-        outputAndQuit(app_state, item.label, item.label);
-    }
-
-    const item = firstFilteredItem(app_state);
-    outputAndQuit(app_state, item.label, item.label);
+    // no selection falls back to the first match
+    const item = app_state.model.selectedItem() orelse app_state.model.items[app_state.model.filtered.items[0]];
+    const output = if (app_state.config.ipc_only) item.ipc_payload orelse item.label else item.label;
+    outputAndQuit(app_state, item.label, output);
 }
 
-fn firstFilteredItem(app_state: *state.AppState) menu.MenuItem {
-    const item_index = app_state.model.filtered.items[0];
-    return app_state.model.items[item_index];
-}
-
-fn outputAndQuit(app_state: *state.AppState, label: []const u8, output: []const u8) void {
+fn outputAndQuit(app_state: *state.AppState, label: []const u8, output: []const u8) noreturn {
     saveCache(app_state, label);
     io_compat.stdoutPrint("{s}\n", .{output}) catch {};
     quit(app_state, 0);
@@ -142,5 +124,3 @@ fn streamCloseAutoAcceptNeedsDelay(last_keystroke_ms: i64, now_ms: i64) bool {
     if (last_keystroke_ms <= 0) return false;
     return now_ms - last_keystroke_ms < stream_close_auto_accept_delay_ms;
 }
-
-pub const readItems = menu.readItems;
