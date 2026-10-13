@@ -17,34 +17,25 @@ pub fn applyArgs(allocator: std.mem.Allocator, args: []const [:0]const u8, confi
         const arg = args[i];
 
         if (std.mem.eql(u8, arg, "--menu-id") or std.mem.eql(u8, arg, "-m")) {
-            i += 1;
-            if (i >= args.len) return error.MissingValue;
-            try menu_id.validate(args[i]);
-            config.menu_id = try allocator.dupeSentinel(u8, args[i], 0);
+            const value = try nextValue(args, &i);
+            try menu_id.validate(value);
+            config.menu_id = try allocator.dupeSentinel(u8, value, 0);
             continue;
         }
         if (std.mem.eql(u8, arg, "--initial-query") or std.mem.eql(u8, arg, "-q")) {
-            i += 1;
-            if (i >= args.len) return error.MissingValue;
-            config.initial_query = try allocator.dupeSentinel(u8, args[i], 0);
+            config.initial_query = try allocator.dupeSentinel(u8, try nextValue(args, &i), 0);
             continue;
         }
         if (std.mem.eql(u8, arg, "--title") or std.mem.eql(u8, arg, "-t")) {
-            i += 1;
-            if (i >= args.len) return error.MissingValue;
-            config.title = try allocator.dupeSentinel(u8, args[i], 0);
+            config.title = try allocator.dupeSentinel(u8, try nextValue(args, &i), 0);
             continue;
         }
         if (std.mem.eql(u8, arg, "--prompt") or std.mem.eql(u8, arg, "-p")) {
-            i += 1;
-            if (i >= args.len) return error.MissingValue;
-            config.placeholder = try allocator.dupeSentinel(u8, args[i], 0);
+            config.placeholder = try allocator.dupeSentinel(u8, try nextValue(args, &i), 0);
             continue;
         }
         if (std.mem.eql(u8, arg, "--search-method") or std.mem.eql(u8, arg, "-s")) {
-            i += 1;
-            if (i >= args.len) return error.MissingValue;
-            try parse.applySearchMethod(config, args[i]);
+            try parse.applySearchMethod(config, try nextValue(args, &i));
             continue;
         }
         if (std.mem.eql(u8, arg, "--terminal")) {
@@ -117,9 +108,7 @@ pub fn applyArgs(allocator: std.mem.Allocator, args: []const [:0]const u8, confi
             continue;
         }
         if (std.mem.eql(u8, arg, "--numeric-selection-mode")) {
-            i += 1;
-            if (i >= args.len) return error.MissingValue;
-            config.numeric_selection_mode = try parse.parseNumericSelectionMode(args[i]);
+            config.numeric_selection_mode = try parse.parseNumericSelectionMode(try nextValue(args, &i));
             continue;
         }
         if (std.mem.startsWith(u8, arg, "--numeric-selection-mode=")) {
@@ -132,63 +121,43 @@ pub fn applyArgs(allocator: std.mem.Allocator, args: []const [:0]const u8, confi
             continue;
         }
         if (std.mem.eql(u8, arg, "--limit")) {
-            i += 1;
-            if (i >= args.len) return error.MissingValue;
-            config.search.limit = try std.fmt.parseInt(usize, args[i], 10);
+            config.search.limit = try std.fmt.parseInt(usize, try nextValue(args, &i), 10);
             continue;
         }
         if (std.mem.eql(u8, arg, "--min-width")) {
-            i += 1;
-            if (i >= args.len) return error.MissingValue;
-            config.window_width = try std.fmt.parseFloat(f64, args[i]);
+            config.window_width = try std.fmt.parseFloat(f64, try nextValue(args, &i));
             continue;
         }
         if (std.mem.eql(u8, arg, "--min-height")) {
-            i += 1;
-            if (i >= args.len) return error.MissingValue;
-            config.window_height = try std.fmt.parseFloat(f64, args[i]);
+            config.window_height = try std.fmt.parseFloat(f64, try nextValue(args, &i));
             continue;
         }
         if (std.mem.eql(u8, arg, "--max-width")) {
-            i += 1;
-            if (i >= args.len) return error.MissingValue;
-            config.max_width = try std.fmt.parseFloat(f64, args[i]);
+            config.max_width = try std.fmt.parseFloat(f64, try nextValue(args, &i));
             continue;
         }
         if (std.mem.eql(u8, arg, "--max-height")) {
-            i += 1;
-            if (i >= args.len) return error.MissingValue;
-            config.max_height = try std.fmt.parseFloat(f64, args[i]);
+            config.max_height = try std.fmt.parseFloat(f64, try nextValue(args, &i));
             continue;
         }
         if (std.mem.eql(u8, arg, "--row-height")) {
-            i += 1;
-            if (i >= args.len) return error.MissingValue;
-            config.row_height = try std.fmt.parseFloat(f64, args[i]);
+            config.row_height = try std.fmt.parseFloat(f64, try nextValue(args, &i));
             continue;
         }
         if (std.mem.eql(u8, arg, "--field-height")) {
-            i += 1;
-            if (i >= args.len) return error.MissingValue;
-            config.field_height = try std.fmt.parseFloat(f64, args[i]);
+            config.field_height = try std.fmt.parseFloat(f64, try nextValue(args, &i));
             continue;
         }
         if (std.mem.eql(u8, arg, "--padding")) {
-            i += 1;
-            if (i >= args.len) return error.MissingValue;
-            config.padding = try std.fmt.parseFloat(f64, args[i]);
+            config.padding = try std.fmt.parseFloat(f64, try nextValue(args, &i));
             continue;
         }
         if (std.mem.eql(u8, arg, "--numeric-column-width")) {
-            i += 1;
-            if (i >= args.len) return error.MissingValue;
-            config.numeric_column_width = try std.fmt.parseFloat(f64, args[i]);
+            config.numeric_column_width = try std.fmt.parseFloat(f64, try nextValue(args, &i));
             continue;
         }
         if (std.mem.eql(u8, arg, "--icon-column-width")) {
-            i += 1;
-            if (i >= args.len) return error.MissingValue;
-            config.icon_column_width = try std.fmt.parseFloat(f64, args[i]);
+            config.icon_column_width = try std.fmt.parseFloat(f64, try nextValue(args, &i));
             continue;
         }
         if (std.mem.eql(u8, arg, "--alternate-rows")) {
@@ -196,9 +165,7 @@ pub fn applyArgs(allocator: std.mem.Allocator, args: []const [:0]const u8, confi
             continue;
         }
         if (std.mem.eql(u8, arg, "--corner-radius")) {
-            i += 1;
-            if (i >= args.len) return error.MissingValue;
-            config.corner_radius = try std.fmt.parseFloat(f64, args[i]);
+            config.corner_radius = try std.fmt.parseFloat(f64, try nextValue(args, &i));
             continue;
         }
         if (std.mem.eql(u8, arg, "--no-vibrancy")) {
@@ -211,39 +178,27 @@ pub fn applyArgs(allocator: std.mem.Allocator, args: []const [:0]const u8, confi
             continue;
         }
         if (std.mem.eql(u8, arg, "--background-color")) {
-            i += 1;
-            if (i >= args.len) return error.MissingValue;
-            config.background_color = try parse.parseColorOptional(args[i]);
+            config.background_color = try parse.parseColorOptional(try nextValue(args, &i));
             continue;
         }
         if (std.mem.eql(u8, arg, "--list-background-color")) {
-            i += 1;
-            if (i >= args.len) return error.MissingValue;
-            config.list_background_color = try parse.parseColorOptional(args[i]);
+            config.list_background_color = try parse.parseColorOptional(try nextValue(args, &i));
             continue;
         }
         if (std.mem.eql(u8, arg, "--field-background-color")) {
-            i += 1;
-            if (i >= args.len) return error.MissingValue;
-            config.field_background_color = try parse.parseColorOptional(args[i]);
+            config.field_background_color = try parse.parseColorOptional(try nextValue(args, &i));
             continue;
         }
         if (std.mem.eql(u8, arg, "--text-color")) {
-            i += 1;
-            if (i >= args.len) return error.MissingValue;
-            config.text_color = try parse.parseColorOptional(args[i]);
+            config.text_color = try parse.parseColorOptional(try nextValue(args, &i));
             continue;
         }
         if (std.mem.eql(u8, arg, "--secondary-text-color")) {
-            i += 1;
-            if (i >= args.len) return error.MissingValue;
-            config.secondary_text_color = try parse.parseColorOptional(args[i]);
+            config.secondary_text_color = try parse.parseColorOptional(try nextValue(args, &i));
             continue;
         }
         if (std.mem.eql(u8, arg, "--selection-color")) {
-            i += 1;
-            if (i >= args.len) return error.MissingValue;
-            config.selection_color = try parse.parseColorOptional(args[i]);
+            config.selection_color = try parse.parseColorOptional(try nextValue(args, &i));
             continue;
         }
         if (std.mem.eql(u8, arg, "--render-bench")) {
@@ -255,6 +210,12 @@ pub fn applyArgs(allocator: std.mem.Allocator, args: []const [:0]const u8, confi
             continue;
         }
     }
+}
+
+fn nextValue(args: []const [:0]const u8, i: *usize) ![:0]const u8 {
+    i.* += 1;
+    if (i.* >= args.len) return error.MissingValue;
+    return args[i.*];
 }
 
 pub fn hasFlag(args: []const [:0]const u8, flag: []const u8) bool {
