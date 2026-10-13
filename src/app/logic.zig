@@ -1,5 +1,6 @@
 const std = @import("std");
 const objc = @import("objc");
+const accept = @import("../accept.zig");
 const cache = @import("../cache.zig");
 const exit_codes = @import("../exit_codes.zig");
 const io_compat = @import("../io_compat.zig");
@@ -101,17 +102,12 @@ pub fn saveCache(app_state: *state.AppState, selection: []const u8) void {
 }
 
 pub fn acceptSelection(app_state: *state.AppState) void {
-    if (app_state.model.filtered.items.len == 0) {
-        if (app_state.config.ipc_only) quit(app_state, exit_codes.user_canceled);
-        if (!app_state.config.accept_custom_selection) return;
-        const query = currentQuery(app_state);
-        outputAndQuit(app_state, query, query);
+    const config = app_state.config;
+    switch (accept.decide(&app_state.model, config.ipc_only, config.accept_custom_selection, currentQuery(app_state))) {
+        .ignore => return,
+        .cancel => quit(app_state, exit_codes.user_canceled),
+        .output => |out| outputAndQuit(app_state, out.label, out.output),
     }
-
-    // no selection falls back to the first match
-    const item = app_state.model.selectedItem() orelse app_state.model.items[app_state.model.filtered.items[0]];
-    const output = if (app_state.config.ipc_only) item.ipc_payload orelse item.label else item.label;
-    outputAndQuit(app_state, item.label, output);
 }
 
 fn outputAndQuit(app_state: *state.AppState, label: []const u8, output: []const u8) noreturn {

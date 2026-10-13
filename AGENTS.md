@@ -13,6 +13,7 @@
 - `src/app.zig` orchestrates AppKit setup. `src/app/` separates state, Objective-C classes/callbacks, views, filtering/selection logic, helpers, and streamed updates.
 - `src/terminal.zig` provides minimal interactive terminal mode, accepting the first case-insensitive substring match on Enter.
 - `src/cli.zig` and `src/cli/` handle arguments, environment variables, config files, and path resolution; `src/config.zig` defines settings and defaults.
+- `src/accept.zig` decides what accepting prints (selection, first match, custom query, IPC payload) as plain testable Zig.
 - `src/menu.zig` owns menu items and the model; `src/search.zig` and `src/search/` implement matching and scoring.
 - `src/ipc.zig` defines IPC messages and socket paths; `src/app/updates.zig` queues stdin/IPC updates for the GUI thread using `std.Io.Mutex`.
 - `src/cache.zig` persists query/selection state; `src/pid.zig` enforces a single instance per menu ID.
@@ -46,7 +47,7 @@
 
 ## Testing Guidelines
 
-- Use Zig `test` blocks. `build.zig` only has two test roots: `src/search.zig` (pulls in `src/search/`) and `src/updates_test.zig`, which also pulls in tests from `src/app/updates.zig`, `src/menu.zig`, `src/menu_id.zig`, `src/cli/config_file.zig`, and `src/cli/args.zig` via `test { _ = @import(...); }`. Tests in other files do not run unless imported from a root; add the import there (or a new root in `build.zig`).
+- Use Zig `test` blocks. `build.zig` only has two test roots: `src/search.zig` (pulls in `src/search/`) and `src/updates_test.zig`, which also pulls in tests from `src/app/updates.zig`, `src/menu.zig`, `src/menu_id.zig`, `src/cli/config_file.zig`, `src/cli/args.zig`, and `src/accept.zig` via `test { _ = @import(...); }`. Tests in other files do not run unless imported from a root; add the import there (or a new root in `build.zig`).
 - Test roots cannot import AppKit/objc code; keep testable logic in plain Zig modules.
 - Prefer small, focused tests around text input handling and event flow.
 - Visual tests use `scripts/visual_test.sh`, sample input, and `samples/visual_baseline.png`; they require macOS Accessibility and Screen Recording permissions.
