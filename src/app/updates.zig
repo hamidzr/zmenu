@@ -48,11 +48,7 @@ pub const UpdateQueue = struct {
         if (batch.len == 0) return;
         self.mutex.lockUncancelable(io_compat.globalIo());
         defer self.mutex.unlock(io_compat.globalIo());
-        self.items.appendSlice(self.allocator, batch) catch {
-            for (batch) |update| {
-                if (update.line) |line| self.allocator.free(line);
-            }
-        };
+        self.items.appendSlice(self.allocator, batch) catch freeLines(self.allocator, batch);
     }
 
     pub fn pushSignal(self: *UpdateQueue, kind: UpdateKind, source: UpdateSource, batch: u64) void {
@@ -80,11 +76,7 @@ pub const UpdateQueue = struct {
     pub fn reset(self: *UpdateQueue) void {
         self.mutex.lockUncancelable(io_compat.globalIo());
         defer self.mutex.unlock(io_compat.globalIo());
-        for (self.items.items) |update| {
-            if (update.line) |line| {
-                self.allocator.free(line);
-            }
-        }
+        freeLines(self.allocator, self.items.items);
         self.items.clearRetainingCapacity();
         self.next_batch = 1;
     }
@@ -96,11 +88,7 @@ pub const UpdateQueue = struct {
             return &[_]ItemUpdate{};
         }
         const out = self.allocator.alloc(ItemUpdate, self.items.items.len) catch {
-            for (self.items.items) |update| {
-                if (update.line) |line| {
-                    self.allocator.free(line);
-                }
-            }
+            freeLines(self.allocator, self.items.items);
             self.items.clearRetainingCapacity();
             return &[_]ItemUpdate{};
         };
@@ -109,6 +97,12 @@ pub const UpdateQueue = struct {
         return out;
     }
 };
+
+fn freeLines(allocator: std.mem.Allocator, batch: []const ItemUpdate) void {
+    for (batch) |update| {
+        if (update.line) |line| allocator.free(line);
+    }
+}
 
 pub const QueueState = struct {
     queue: ?*UpdateQueue,
@@ -174,17 +168,11 @@ fn processStdinChunk(queue: *UpdateQueue, pending: *std.ArrayList(u8), discardin
 }
 
 fn flushPendingStdinLine(queue: *UpdateQueue, pending: *std.ArrayList(u8)) void {
+    defer pending.clearRetainingCapacity();
     const trimmed = std.mem.trimEnd(u8, pending.items, "\r");
-    if (trimmed.len == 0) {
-        pending.clearRetainingCapacity();
-        return;
-    }
+    if (trimmed.len == 0) return;
 
-    const line = queue.allocator.dupe(u8, trimmed) catch {
-        pending.clearRetainingCapacity();
-        return;
-    };
-    pending.clearRetainingCapacity();
+    const line = queue.allocator.dupe(u8, trimmed) catch return;
     queue.pushOwned(.append, .stdin, line, 0);
 }
 
@@ -288,8 +276,7 @@ fn readLineAlloc(reader: *std.Io.Reader, allocator: std.mem.Allocator, max_len: 
         try buffer.append(allocator, byte[0]);
     }
 
-    const slice = try buffer.toOwnedSlice(allocator);
-    return slice;
+    return try buffer.toOwnedSlice(allocator);
 }
 
 fn handleIpcPayload(queue: *UpdateQueue, payload: []const u8) void {
@@ -319,6 +306,13 @@ fn handleIpcPayload(queue: *UpdateQueue, payload: []const u8) void {
         return;
     }
     queue.pushBatchOwned(batch.items);
+}
+
+fn updateKindFromCommand(command: []const u8) ?UpdateKind {
+    if (std.ascii.eqlIgnoreCase(command, "set")) return .set;
+    if (std.ascii.eqlIgnoreCase(command, "append")) return .append;
+    if (std.ascii.eqlIgnoreCase(command, "prepend")) return .prepend;
+    return null;
 }
 
 test "oversized stdin line is skipped and later lines survive" {
@@ -360,11 +354,4 @@ test "empty IPC set enqueues a clear signal" {
     try std.testing.expectEqual(@as(usize, 1), drained.len);
     try std.testing.expectEqual(UpdateKind.set, drained[0].kind);
     try std.testing.expect(drained[0].line == null);
-}
-
-fn updateKindFromCommand(command: []const u8) ?UpdateKind {
-    if (std.ascii.eqlIgnoreCase(command, "set")) return .set;
-    if (std.ascii.eqlIgnoreCase(command, "append")) return .append;
-    if (std.ascii.eqlIgnoreCase(command, "prepend")) return .prepend;
-    return null;
 }
