@@ -46,7 +46,7 @@
 
 ## Testing Guidelines
 
-- Use Zig `test` blocks. `build.zig` only has two test roots: `src/search.zig` (pulls in `src/search/`) and `src/updates_test.zig`, which also pulls in `src/cli/config_file.zig` tests via `test { _ = @import(...); }`. Tests in other files do not run unless imported from a root; add the import there (or a new root in `build.zig`).
+- Use Zig `test` blocks. `build.zig` only has two test roots: `src/search.zig` (pulls in `src/search/`) and `src/updates_test.zig`, which also pulls in tests from `src/app/updates.zig`, `src/menu.zig`, `src/menu_id.zig`, `src/cli/config_file.zig`, and `src/cli/args.zig` via `test { _ = @import(...); }`. Tests in other files do not run unless imported from a root; add the import there (or a new root in `build.zig`).
 - Test roots cannot import AppKit/objc code; keep testable logic in plain Zig modules.
 - Prefer small, focused tests around text input handling and event flow.
 - Visual tests use `scripts/visual_test.sh`, sample input, and `samples/visual_baseline.png`; they require macOS Accessibility and Screen Recording permissions.
