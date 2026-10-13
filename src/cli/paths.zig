@@ -4,55 +4,46 @@ const io_compat = @import("../io_compat.zig");
 
 pub fn defaultConfigPath(allocator: std.mem.Allocator, menu_id: [:0]const u8) ![]const u8 {
     const home = try homeDir(allocator);
-    if (home) |home_dir| {
-        const gmenu_config = try std.fs.path.join(allocator, &.{ home_dir, ".config", "gmenu" });
-        if (menu_id.len > 0) {
-            return std.fs.path.join(allocator, &.{ gmenu_config, menu_id, "config.yaml" });
-        }
-        return std.fs.path.join(allocator, &.{ gmenu_config, "config.yaml" });
-    }
-
-    const config_home = try userConfigDir(allocator, home);
-    if (config_home) |dir| {
-        const gmenu_config = try std.fs.path.join(allocator, &.{ dir, "gmenu" });
-        if (menu_id.len > 0) {
-            return std.fs.path.join(allocator, &.{ gmenu_config, menu_id, "config.yaml" });
-        }
-        return std.fs.path.join(allocator, &.{ gmenu_config, "config.yaml" });
-    }
-
-    return error.MissingHome;
+    const gmenu_dir = if (home) |home_dir|
+        try std.fs.path.join(allocator, &.{ home_dir, ".config", "gmenu" })
+    else if (try userConfigDir(allocator, null)) |dir|
+        try std.fs.path.join(allocator, &.{ dir, "gmenu" })
+    else
+        return error.MissingHome;
+    return configFileIn(allocator, gmenu_dir, menu_id);
 }
 
+/// menu-scoped files win over base files; within each, ~/.config/gmenu,
+/// ~/.gmenu, then the platform config dir
 pub fn findConfigPath(allocator: std.mem.Allocator, menu_id: [:0]const u8) !?[]const u8 {
     const home = try homeDir(allocator);
     const config_home = try userConfigDir(allocator, home);
 
-    if (menu_id.len > 0) {
-        if (home) |home_dir| {
-            const scoped = try std.fs.path.join(allocator, &.{ home_dir, ".config", "gmenu", menu_id, "config.yaml" });
-            if (pathExists(scoped)) return scoped;
-            const gmenu_home = try std.fs.path.join(allocator, &.{ home_dir, ".gmenu", menu_id, "config.yaml" });
-            if (pathExists(gmenu_home)) return gmenu_home;
-        }
-        if (config_home) |dir| {
-            const scoped = try std.fs.path.join(allocator, &.{ dir, "gmenu", menu_id, "config.yaml" });
-            if (pathExists(scoped)) return scoped;
-        }
-    }
-
+    var dirs: [3][]const u8 = undefined;
+    var dir_count: usize = 0;
     if (home) |home_dir| {
-        const base = try std.fs.path.join(allocator, &.{ home_dir, ".config", "gmenu", "config.yaml" });
-        if (pathExists(base)) return base;
-        const home_base = try std.fs.path.join(allocator, &.{ home_dir, ".gmenu", "config.yaml" });
-        if (pathExists(home_base)) return home_base;
+        dirs[dir_count] = try std.fs.path.join(allocator, &.{ home_dir, ".config", "gmenu" });
+        dirs[dir_count + 1] = try std.fs.path.join(allocator, &.{ home_dir, ".gmenu" });
+        dir_count += 2;
     }
     if (config_home) |dir| {
-        const base = try std.fs.path.join(allocator, &.{ dir, "gmenu", "config.yaml" });
-        if (pathExists(base)) return base;
+        dirs[dir_count] = try std.fs.path.join(allocator, &.{ dir, "gmenu" });
+        dir_count += 1;
     }
 
+    const scopes: []const [:0]const u8 = if (menu_id.len > 0) &.{ menu_id, "" } else &.{""};
+    for (scopes) |scope| {
+        for (dirs[0..dir_count]) |dir| {
+            const path = try configFileIn(allocator, dir, scope);
+            if (pathExists(path)) return path;
+        }
+    }
     return null;
+}
+
+fn configFileIn(allocator: std.mem.Allocator, gmenu_dir: []const u8, menu_id: []const u8) ![]const u8 {
+    if (menu_id.len > 0) return std.fs.path.join(allocator, &.{ gmenu_dir, menu_id, "config.yaml" });
+    return std.fs.path.join(allocator, &.{ gmenu_dir, "config.yaml" });
 }
 
 pub fn makePathAbsolute(path: []const u8) !void {
