@@ -5,6 +5,7 @@ test {
     _ = @import("cli/config_file.zig");
     _ = @import("menu_id.zig");
     _ = @import("menu.zig");
+    _ = @import("cli/args.zig");
 }
 
 // A set must become visible to the UI in one drain, never item by item.

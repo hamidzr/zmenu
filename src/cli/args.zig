@@ -281,3 +281,18 @@ fn findArgValue(args: []const [:0]const u8, long_flag: []const u8, short_flag: [
     }
     return null;
 }
+
+test "value flags parse and report missing values" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var config = appconfig.defaults();
+    try applyArgs(arena.allocator(), &.{ "zmenu", "-m", "work", "--row-height", "40", "--limit", "7", "-t", "Title", "--no-vibrancy" }, &config);
+    try std.testing.expectEqualStrings("work", config.menu_id);
+    try std.testing.expectEqual(@as(f64, 40), config.row_height);
+    try std.testing.expectEqual(@as(usize, 7), config.search.limit);
+    try std.testing.expectEqualStrings("Title", config.title);
+    try std.testing.expect(!config.vibrancy);
+
+    try std.testing.expectError(error.MissingValue, applyArgs(arena.allocator(), &.{ "zmenu", "--padding" }, &config));
+    try std.testing.expectError(error.MissingValue, applyArgs(arena.allocator(), &.{ "zmenu", "-q" }, &config));
+}
