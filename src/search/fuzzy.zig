@@ -50,55 +50,44 @@ pub fn fuzzySearchBrute(
     min_consecutive: usize,
     matches: *std.ArrayList(types.Match),
 ) void {
+    fuzzySearchBruteOnIndices(labels, null, query, min_consecutive, matches);
+}
+
+/// null indices means every label
+fn fuzzySearchBruteOnIndices(
+    labels: []const []const u8,
+    indices: ?[]const usize,
+    query: []const u8,
+    min_consecutive: usize,
+    matches: *std.ArrayList(types.Match),
+) void {
     matches.clearRetainingCapacity();
+    const count = if (indices) |list| list.len else labels.len;
     if (query.len == 0) {
-        for (labels, 0..) |_, idx| {
-            matches.appendAssumeCapacity(.{ .index = idx, .score = 0 });
+        for (0..count) |n| {
+            matches.appendAssumeCapacity(.{ .index = labelIndex(indices, n), .score = 0 });
         }
         return;
     }
 
-    for (labels, 0..) |label, idx| {
-        if (containsSmartCase(label, query)) {
+    for (0..count) |n| {
+        const idx = labelIndex(indices, n);
+        if (containsSmartCase(labels[idx], query)) {
             // direct substring matches should rank ahead of fuzzy subsequence matches when we sort later
             matches.appendAssumeCapacity(.{ .index = idx, .score = 1 });
         }
     }
-    for (labels, 0..) |label, idx| {
+    for (0..count) |n| {
+        const idx = labelIndex(indices, n);
+        const label = labels[idx];
         if (!containsSmartCase(label, query) and fuzzyContainsConsec(label, query, true, min_consecutive)) {
             matches.appendAssumeCapacity(.{ .index = idx, .score = 0 });
         }
     }
 }
 
-fn fuzzySearchBruteOnIndices(
-    labels: []const []const u8,
-    indices: []const usize,
-    query: []const u8,
-    min_consecutive: usize,
-    matches: *std.ArrayList(types.Match),
-) void {
-    matches.clearRetainingCapacity();
-    if (query.len == 0) {
-        for (indices) |idx| {
-            matches.appendAssumeCapacity(.{ .index = idx, .score = 0 });
-        }
-        return;
-    }
-
-    for (indices) |idx| {
-        const label = labels[idx];
-        if (containsSmartCase(label, query)) {
-            // direct substring matches should rank ahead of fuzzy subsequence matches when we sort later
-            matches.appendAssumeCapacity(.{ .index = idx, .score = 1 });
-        }
-    }
-    for (indices) |idx| {
-        const label = labels[idx];
-        if (!containsSmartCase(label, query) and fuzzyContainsConsec(label, query, true, min_consecutive)) {
-            matches.appendAssumeCapacity(.{ .index = idx, .score = 0 });
-        }
-    }
+fn labelIndex(indices: ?[]const usize, n: usize) usize {
+    return if (indices) |list| list[n] else n;
 }
 
 pub fn fuzzyScoreSearch(
