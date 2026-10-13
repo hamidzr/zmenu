@@ -389,3 +389,22 @@ test "unquoted comments and key style conflicts retain behavior" {
         \\preserveOrder: false
     ));
 }
+
+test "camelCase aliases set the same fields as snake_case keys" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var config = appconfig.defaults();
+    try applyConfigContents(arena.allocator(), &config,
+        \\menuId: work
+        \\rowHeight: 40
+        \\noNumericSelection: true
+        \\iconColumnWidth: 24
+        \\selectionColor: "#010203"
+    );
+    try std.testing.expectEqualStrings("work", config.menu_id);
+    try std.testing.expectEqual(@as(f64, 40), config.row_height);
+    try std.testing.expectEqual(appconfig.NumericSelectionMode.off, config.numeric_selection_mode);
+    try std.testing.expectEqual(@as(f64, 24), config.icon_column_width);
+    try std.testing.expectEqual(try parse.parseColorOptional("#010203"), config.selection_color);
+    try std.testing.expectError(error.InvalidConfigKey, applyConfigContents(arena.allocator(), &config, "rowheight: 1"));
+}
