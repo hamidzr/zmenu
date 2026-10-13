@@ -330,3 +330,50 @@ pub const Model = struct {
         return self.items[item_index];
     }
 };
+
+fn testItems(allocator: std.mem.Allocator, labels: []const [:0]const u8) ![]MenuItem {
+    const items = try allocator.alloc(MenuItem, labels.len);
+    for (labels, 0..) |label, idx| items[idx] = .{ .label = label, .index = idx, .icon = null };
+    return items;
+}
+
+test "setItems dedupes labels when unique" {
+    const allocator = std.testing.allocator;
+    var model = try Model.init(allocator, try testItems(allocator, &.{"a"}), true);
+    defer model.deinit(allocator);
+
+    const incoming = [_]MenuItem{
+        .{ .label = "b", .index = 0, .icon = null },
+        .{ .label = "c", .index = 0, .icon = null },
+        .{ .label = "b", .index = 0, .icon = null },
+    };
+    try model.setItems(allocator, &incoming);
+    try std.testing.expectEqual(@as(usize, 2), model.items.len);
+    try std.testing.expectEqualStrings("b", model.items[0].label);
+    try std.testing.expectEqualStrings("c", model.items[1].label);
+    try std.testing.expectEqual(@as(usize, 1), model.items[1].index);
+
+    // old labels are forgotten, so a later append of "a" is kept
+    try model.appendItems(allocator, &.{.{ .label = "a", .index = 0, .icon = null }});
+    try std.testing.expectEqual(@as(usize, 3), model.items.len);
+
+    try model.setItems(allocator, &.{});
+    try std.testing.expectEqual(@as(usize, 0), model.items.len);
+}
+
+test "moveSelection wraps both ways" {
+    const allocator = std.testing.allocator;
+    var model = try Model.init(allocator, try testItems(allocator, &.{ "a", "b", "c" }), false);
+    defer model.deinit(allocator);
+    model.applyFilter("", .{});
+    try std.testing.expectEqual(@as(isize, 0), model.selected);
+
+    model.moveSelection(-1);
+    try std.testing.expectEqual(@as(isize, 2), model.selected);
+    model.moveSelection(1);
+    try std.testing.expectEqual(@as(isize, 0), model.selected);
+
+    model.selected = -1;
+    model.moveSelection(1);
+    try std.testing.expectEqual(@as(isize, 1), model.selected);
+}
