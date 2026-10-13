@@ -42,6 +42,18 @@ fn activateApp(app: objc.Object) void {
     time_compat.startupStage("activation_requested");
 }
 
+fn addFixedColumn(table_view: objc.Object, identifier: [*:0]const u8, width: f64) objc.Object {
+    const NSTableColumn = objc.getClass("NSTableColumn").?;
+    const column = NSTableColumn.msgSend(objc.Object, "alloc", .{})
+        .msgSend(objc.Object, "initWithIdentifier:", .{nsString(identifier)});
+    column.msgSend(void, "setWidth:", .{width});
+    column.msgSend(void, "setMinWidth:", .{width});
+    column.msgSend(void, "setMaxWidth:", .{width});
+    column.msgSend(void, "setResizingMask:", .{@as(c_ulong, 0)}); // no resizing
+    table_view.msgSend(void, "addTableColumn:", .{column});
+    return column;
+}
+
 pub fn run(config: appconfig.Config) !void {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
@@ -296,23 +308,10 @@ pub fn run(config: appconfig.Config) !void {
     const NSTableColumn = objc.getClass("NSTableColumn").?;
     var index_column: ?objc.Object = null;
     if (config.hasNumericSelectionColumn()) {
-        const table_index_column = NSTableColumn.msgSend(objc.Object, "alloc", .{})
-            .msgSend(objc.Object, "initWithIdentifier:", .{nsString("index")});
-        table_index_column.msgSend(void, "setWidth:", .{numeric_width});
-        table_index_column.msgSend(void, "setMinWidth:", .{numeric_width});
-        table_index_column.msgSend(void, "setMaxWidth:", .{numeric_width});
-        table_index_column.msgSend(void, "setResizingMask:", .{@as(c_ulong, 0)}); // no resizing
-        table_view.msgSend(void, "addTableColumn:", .{table_index_column});
-        index_column = table_index_column;
+        index_column = addFixedColumn(table_view, "index", numeric_width);
     }
     if (config.show_icons) {
-        const icon_column = NSTableColumn.msgSend(objc.Object, "alloc", .{})
-            .msgSend(objc.Object, "initWithIdentifier:", .{nsString("icon")});
-        icon_column.msgSend(void, "setWidth:", .{icon_width});
-        icon_column.msgSend(void, "setMinWidth:", .{icon_width});
-        icon_column.msgSend(void, "setMaxWidth:", .{icon_width});
-        icon_column.msgSend(void, "setResizingMask:", .{@as(c_ulong, 0)}); // no resizing
-        table_view.msgSend(void, "addTableColumn:", .{icon_column});
+        _ = addFixedColumn(table_view, "icon", icon_width);
     }
     const table_column = NSTableColumn.msgSend(objc.Object, "alloc", .{})
         .msgSend(objc.Object, "initWithIdentifier:", .{nsString("items")});
