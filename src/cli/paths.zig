@@ -83,16 +83,13 @@ test "config lookup prefers scoped, then home before xdg" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const allocator = arena.allocator();
-    const io = io_compat.globalIo();
-
-    const root = "/tmp/zmenu-paths-test";
-    std.Io.Dir.cwd().deleteTree(io, root) catch {};
-    defer std.Io.Dir.cwd().deleteTree(io, root) catch {};
+    const scratch = try test_env.Scratch.init(allocator, "paths");
+    defer scratch.deinit();
 
     const guard = try test_env.Guard.init(allocator, &.{ "HOME", "XDG_CONFIG_HOME" });
     defer guard.restore();
-    test_env.set("HOME", root ++ "/home");
-    test_env.set("XDG_CONFIG_HOME", root ++ "/xdg");
+    test_env.set("HOME", try scratch.path("/home"));
+    test_env.set("XDG_CONFIG_HOME", try scratch.path("/xdg"));
 
     const touch = struct {
         fn f(path: []const u8) !void {
@@ -112,23 +109,23 @@ test "config lookup prefers scoped, then home before xdg" {
     }.f;
 
     try expectFound(allocator, "work", null);
-    try touch(root ++ "/xdg/gmenu/config.yaml");
-    try expectFound(allocator, "work", root ++ "/xdg/gmenu/config.yaml");
-    try touch(root ++ "/home/.gmenu/config.yaml");
-    try expectFound(allocator, "", root ++ "/home/.gmenu/config.yaml");
-    try touch(root ++ "/home/.config/gmenu/config.yaml");
-    try expectFound(allocator, "", root ++ "/home/.config/gmenu/config.yaml");
-    try touch(root ++ "/xdg/gmenu/work/config.yaml");
-    try expectFound(allocator, "work", root ++ "/xdg/gmenu/work/config.yaml");
-    try touch(root ++ "/home/.gmenu/work/config.yaml");
-    try expectFound(allocator, "work", root ++ "/home/.gmenu/work/config.yaml");
-    try touch(root ++ "/home/.config/gmenu/work/config.yaml");
-    try expectFound(allocator, "work", root ++ "/home/.config/gmenu/work/config.yaml");
+    try touch(try scratch.path("/xdg/gmenu/config.yaml"));
+    try expectFound(allocator, "work", try scratch.path("/xdg/gmenu/config.yaml"));
+    try touch(try scratch.path("/home/.gmenu/config.yaml"));
+    try expectFound(allocator, "", try scratch.path("/home/.gmenu/config.yaml"));
+    try touch(try scratch.path("/home/.config/gmenu/config.yaml"));
+    try expectFound(allocator, "", try scratch.path("/home/.config/gmenu/config.yaml"));
+    try touch(try scratch.path("/xdg/gmenu/work/config.yaml"));
+    try expectFound(allocator, "work", try scratch.path("/xdg/gmenu/work/config.yaml"));
+    try touch(try scratch.path("/home/.gmenu/work/config.yaml"));
+    try expectFound(allocator, "work", try scratch.path("/home/.gmenu/work/config.yaml"));
+    try touch(try scratch.path("/home/.config/gmenu/work/config.yaml"));
+    try expectFound(allocator, "work", try scratch.path("/home/.config/gmenu/work/config.yaml"));
 
-    try std.testing.expectEqualStrings(root ++ "/home/.config/gmenu/work/config.yaml", try defaultConfigPath(allocator, "work"));
-    try std.testing.expectEqualStrings(root ++ "/home/.config/gmenu/config.yaml", try defaultConfigPath(allocator, ""));
+    try std.testing.expectEqualStrings(try scratch.path("/home/.config/gmenu/work/config.yaml"), try defaultConfigPath(allocator, "work"));
+    try std.testing.expectEqualStrings(try scratch.path("/home/.config/gmenu/config.yaml"), try defaultConfigPath(allocator, ""));
     test_env.unset("HOME");
-    try std.testing.expectEqualStrings(root ++ "/xdg/gmenu/config.yaml", try defaultConfigPath(allocator, ""));
+    try std.testing.expectEqualStrings(try scratch.path("/xdg/gmenu/config.yaml"), try defaultConfigPath(allocator, ""));
     test_env.unset("XDG_CONFIG_HOME");
     try std.testing.expectError(error.MissingHome, defaultConfigPath(allocator, ""));
 }

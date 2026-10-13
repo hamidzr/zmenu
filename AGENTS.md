@@ -48,7 +48,7 @@
 ## Testing Guidelines
 
 - Use Zig `test` blocks. `build.zig` only has two test roots: `src/search.zig` (pulls in `src/search/`) and `src/updates_test.zig`, whose `test { _ = @import(...); }` block lists every other plain-Zig module with tests (CLI, config paths, cache, pid, IPC, menu model, accept). Tests in other files do not run unless imported from a root; add the import there (or a new root in `build.zig`). Both roots link libc.
-- Tests that touch env vars use `src/test_env.zig` (`Guard` snapshot/restore plus `set`/`unset`) and scratch dirs under `/tmp/zmenu-*-test` that they delete afterwards.
+- Tests that touch env vars or the filesystem use `src/test_env.zig`: `Guard` snapshots/restores vars, `set`/`unset` panic on failure, and `Scratch` gives a per-process `/tmp/zmenu-<name>-test-<pid>` dir (so concurrent test runs don't collide) that is deleted afterwards.
 - Test roots cannot import AppKit/objc code; keep testable logic in plain Zig modules.
 - Prefer small, focused tests around text input handling and event flow.
 - Visual tests use `scripts/visual_test.sh`, sample input, and `samples/visual_baseline.png`; they require macOS Accessibility and Screen Recording permissions.

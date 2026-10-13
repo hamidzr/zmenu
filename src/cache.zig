@@ -90,11 +90,9 @@ test "save then load round-trips, legacy keys still parse" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const allocator = arena.allocator();
-    const io = io_compat.globalIo();
-
-    const root = "/tmp/zmenu-cache-test";
-    std.Io.Dir.cwd().deleteTree(io, root) catch {};
-    defer std.Io.Dir.cwd().deleteTree(io, root) catch {};
+    const scratch = try test_env.Scratch.init(allocator, "cache");
+    defer scratch.deinit();
+    const root = scratch.root;
     const guard = try test_env.Guard.init(allocator, &.{"XDG_CACHE_HOME"});
     defer guard.restore();
     test_env.set("XDG_CACHE_HOME", root);
@@ -107,7 +105,7 @@ test "save then load round-trips, legacy keys still parse" {
     try std.testing.expectEqualStrings("Firefox", loaded.last_selection);
     try std.testing.expectEqual(@as(i64, 42), loaded.last_selection_time);
 
-    const legacy = try io_compat.createFileAbsolute(root ++ "/gmenu/work/cache.yaml", .{ .truncate = true });
+    const legacy = try io_compat.createFileAbsolute(try scratch.path("/gmenu/work/cache.yaml"), .{ .truncate = true });
     try io_compat.filePrint(legacy, "  last_query:  q  \r\nlast_entry_time: 7\nunknown: x\n", .{});
     io_compat.closeFile(legacy);
     const old = (try load(allocator, "work")).?;

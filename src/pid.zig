@@ -63,18 +63,15 @@ test "pid file blocks a second instance and stale files are replaced" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const allocator = arena.allocator();
-    const io = io_compat.globalIo();
-
-    const root = "/tmp/zmenu-pid-test";
-    std.Io.Dir.cwd().deleteTree(io, root) catch {};
-    try std.Io.Dir.cwd().createDirPath(io, root);
-    defer std.Io.Dir.cwd().deleteTree(io, root) catch {};
+    const scratch = try test_env.Scratch.init(allocator, "pid");
+    defer scratch.deinit();
+    const root = scratch.root;
     const guard = try test_env.Guard.init(allocator, &.{"TMPDIR"});
     defer guard.restore();
     test_env.set("TMPDIR", root);
 
     const path = try create(allocator, "work");
-    try std.testing.expectEqualStrings(root ++ "/work.pid", path);
+    try std.testing.expectEqualStrings(try scratch.path("/work.pid"), path);
     // our own pid is alive, so a second instance is refused
     try std.testing.expectError(error.AlreadyRunning, create(allocator, "work"));
     remove(path);
