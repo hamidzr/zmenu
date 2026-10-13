@@ -1,5 +1,6 @@
 const std = @import("std");
 const io_compat = @import("io_compat.zig");
+const test_env = @import("test_env.zig");
 
 pub const Item = struct {
     id: []const u8 = "",
@@ -51,30 +52,20 @@ test parseCommand {
 }
 
 test "tempDir falls back TMPDIR, TMP, TEMP, then /tmp" {
-    const libc = struct {
-        extern "c" fn setenv(name: [*:0]const u8, value: [*:0]const u8, overwrite: c_int) c_int;
-        extern "c" fn unsetenv(name: [*:0]const u8) c_int;
-    };
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const allocator = arena.allocator();
 
     const names = [_][:0]const u8{ "TMPDIR", "TMP", "TEMP" };
-    var saved: [names.len]?[:0]const u8 = undefined;
-    for (names, 0..) |name, idx| {
-        const value = try io_compat.getEnvVarOwnedOptional(allocator, name);
-        saved[idx] = if (value) |v| try allocator.dupeSentinel(u8, v, 0) else null;
-        _ = libc.unsetenv(name);
-    }
-    defer for (names, saved) |name, value| {
-        if (value) |v| _ = libc.setenv(name, v, 1) else _ = libc.unsetenv(name);
-    };
+    const guard = try test_env.Guard.init(allocator, &names);
+    defer guard.restore();
+    for (names) |name| test_env.unset(name);
 
     try std.testing.expectEqualStrings("/tmp", try tempDir(allocator));
-    _ = libc.setenv("TEMP", "/c", 1);
+    test_env.set("TEMP", "/c");
     try std.testing.expectEqualStrings("/c", try tempDir(allocator));
-    _ = libc.setenv("TMP", "/b", 1);
+    test_env.set("TMP", "/b");
     try std.testing.expectEqualStrings("/b", try tempDir(allocator));
-    _ = libc.setenv("TMPDIR", "/a", 1);
+    test_env.set("TMPDIR", "/a");
     try std.testing.expectEqualStrings("/a", try tempDir(allocator));
 }
