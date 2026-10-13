@@ -156,12 +156,7 @@ pub fn run(config: appconfig.Config) !void {
     const content_view = window.msgSend(objc.Object, "contentView", .{});
     content_view.msgSend(void, "setWantsLayer:", .{true});
     const layer = content_view.msgSend(objc.Object, "layer", .{});
-    const border_color = NSColor.msgSend(objc.Object, "colorWithSRGBRed:green:blue:alpha:", .{
-        @as(f64, 1.0),
-        @as(f64, 1.0),
-        @as(f64, 1.0),
-        @as(f64, 0.1),
-    });
+    const border_color = nsColor(.{ .r = 1.0, .g = 1.0, .b = 1.0, .a = 0.1 });
     const cg_color = border_color.msgSend(objc.c.id, "CGColor", .{});
     layer.msgSend(void, "setBorderColor:", .{cg_color});
     layer.msgSend(void, "setBorderWidth:", .{@as(f64, 1.0)});

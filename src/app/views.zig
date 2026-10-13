@@ -168,21 +168,12 @@ fn paintSelection(dirty_rect: NSRect) bool {
 /// fill when selection falls back to the system highlight.
 fn hoverFillColor() ?objc.Object {
     const app_state = state.g_state orelse return null;
-    const NSColor = objc.getClass("NSColor").?;
     if (app_state.config.selection_color) |color| {
-        return NSColor.msgSend(objc.Object, "colorWithSRGBRed:green:blue:alpha:", .{
-            color.r,
-            color.g,
-            color.b,
-            color.a * 0.22,
-        });
+        var muted = color;
+        muted.a *= 0.22;
+        return nsColor(muted);
     }
-    return NSColor.msgSend(objc.Object, "colorWithSRGBRed:green:blue:alpha:", .{
-        @as(f64, 1.0),
-        @as(f64, 1.0),
-        @as(f64, 1.0),
-        @as(f64, 0.07),
-    });
+    return nsColor(.{ .r = 1.0, .g = 1.0, .b = 1.0, .a = 0.07 });
 }
 
 fn paintRowFill(dirty_rect: NSRect, color: objc.Object) bool {
