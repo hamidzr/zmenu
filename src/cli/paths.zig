@@ -90,3 +90,68 @@ fn pathExists(path: []const u8) bool {
         else => return false,
     }
 }
+
+test "config lookup prefers scoped, then home before xdg" {
+    const libc = struct {
+        extern "c" fn setenv(name: [*:0]const u8, value: [*:0]const u8, overwrite: c_int) c_int;
+        extern "c" fn unsetenv(name: [*:0]const u8) c_int;
+    };
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+    const io = io_compat.globalIo();
+
+    const root = "/tmp/zmenu-paths-test";
+    std.Io.Dir.cwd().deleteTree(io, root) catch {};
+    defer std.Io.Dir.cwd().deleteTree(io, root) catch {};
+
+    const names = [_][:0]const u8{ "HOME", "XDG_CONFIG_HOME" };
+    var saved: [names.len]?[:0]const u8 = undefined;
+    for (names, 0..) |name, idx| {
+        const value = try io_compat.getEnvVarOwnedOptional(allocator, name);
+        saved[idx] = if (value) |v| try allocator.dupeSentinel(u8, v, 0) else null;
+    }
+    defer for (names, saved) |name, value| {
+        if (value) |v| _ = libc.setenv(name, v, 1) else _ = libc.unsetenv(name);
+    };
+    _ = libc.setenv("HOME", root ++ "/home", 1);
+    _ = libc.setenv("XDG_CONFIG_HOME", root ++ "/xdg", 1);
+
+    const touch = struct {
+        fn f(path: []const u8) !void {
+            try makePathAbsolute(std.fs.path.dirname(path).?);
+            io_compat.closeFile(try io_compat.createFileAbsolute(path, .{}));
+        }
+    }.f;
+    const expectFound = struct {
+        fn f(alloc: std.mem.Allocator, menu_id: [:0]const u8, expected: ?[]const u8) !void {
+            const found = try findConfigPath(alloc, menu_id);
+            if (expected) |path| {
+                try std.testing.expectEqualStrings(path, found.?);
+            } else {
+                try std.testing.expect(found == null);
+            }
+        }
+    }.f;
+
+    try expectFound(allocator, "work", null);
+    try touch(root ++ "/xdg/gmenu/config.yaml");
+    try expectFound(allocator, "work", root ++ "/xdg/gmenu/config.yaml");
+    try touch(root ++ "/home/.gmenu/config.yaml");
+    try expectFound(allocator, "", root ++ "/home/.gmenu/config.yaml");
+    try touch(root ++ "/home/.config/gmenu/config.yaml");
+    try expectFound(allocator, "", root ++ "/home/.config/gmenu/config.yaml");
+    try touch(root ++ "/xdg/gmenu/work/config.yaml");
+    try expectFound(allocator, "work", root ++ "/xdg/gmenu/work/config.yaml");
+    try touch(root ++ "/home/.gmenu/work/config.yaml");
+    try expectFound(allocator, "work", root ++ "/home/.gmenu/work/config.yaml");
+    try touch(root ++ "/home/.config/gmenu/work/config.yaml");
+    try expectFound(allocator, "work", root ++ "/home/.config/gmenu/work/config.yaml");
+
+    try std.testing.expectEqualStrings(root ++ "/home/.config/gmenu/work/config.yaml", try defaultConfigPath(allocator, "work"));
+    try std.testing.expectEqualStrings(root ++ "/home/.config/gmenu/config.yaml", try defaultConfigPath(allocator, ""));
+    _ = libc.unsetenv("HOME");
+    try std.testing.expectEqualStrings(root ++ "/xdg/gmenu/config.yaml", try defaultConfigPath(allocator, ""));
+    _ = libc.unsetenv("XDG_CONFIG_HOME");
+    try std.testing.expectError(error.MissingHome, defaultConfigPath(allocator, ""));
+}
