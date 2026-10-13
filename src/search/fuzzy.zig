@@ -142,25 +142,7 @@ fn containsSmartCase(haystack: []const u8, needle: []const u8) bool {
     if (util.hasUpperAscii(needle)) {
         return std.mem.indexOf(u8, haystack, needle) != null;
     }
-    return containsInsensitive(haystack, needle);
-}
-
-fn containsInsensitive(haystack: []const u8, needle: []const u8) bool {
-    if (needle.len == 0) return true;
-    if (needle.len > haystack.len) return false;
-
-    var i: usize = 0;
-    while (i + needle.len <= haystack.len) : (i += 1) {
-        var j: usize = 0;
-        while (j < needle.len) : (j += 1) {
-            if (std.ascii.toLower(haystack[i + j]) != std.ascii.toLower(needle[j])) {
-                break;
-            }
-        }
-        if (j == needle.len) return true;
-    }
-
-    return false;
+    return util.containsInsensitive(haystack, needle);
 }
 
 fn fuzzyContainsConsec(s: []const u8, query: []const u8, ignore_case: bool, min_consecutive: usize) bool {

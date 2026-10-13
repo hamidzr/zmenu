@@ -4,6 +4,7 @@ const pid = @import("pid.zig");
 const menu = @import("menu.zig");
 const exit_codes = @import("exit_codes.zig");
 const io_compat = @import("io_compat.zig");
+const containsInsensitive = @import("search/util.zig").containsInsensitive;
 
 pub fn run(config: appconfig.Config, allocator: std.mem.Allocator) !void {
     const items = menu.readItems(allocator, config.unique) catch {
@@ -165,22 +166,4 @@ fn renderMatches(
         try io_compat.filePrint(tty, "(no matches)\r\n", .{});
     }
     try io_compat.filePrint(tty, "--------------------------------\r\n", .{});
-}
-
-fn containsInsensitive(haystack: []const u8, needle: []const u8) bool {
-    if (needle.len == 0) return true;
-    if (needle.len > haystack.len) return false;
-
-    var i: usize = 0;
-    while (i + needle.len <= haystack.len) : (i += 1) {
-        var j: usize = 0;
-        while (j < needle.len) : (j += 1) {
-            if (std.ascii.toLower(haystack[i + j]) != std.ascii.toLower(needle[j])) {
-                break;
-            }
-        }
-        if (j == needle.len) return true;
-    }
-
-    return false;
 }
