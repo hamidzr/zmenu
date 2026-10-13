@@ -25,24 +25,13 @@ pub fn load(allocator: std.mem.Allocator, menu_id: []const u8) !?State {
     var iter = std.mem.splitScalar(u8, contents, '\n');
     while (iter.next()) |line| {
         const trimmed = std.mem.trim(u8, line, " \t\r");
-        if (trimmed.len == 0) continue;
-        if (std.mem.startsWith(u8, trimmed, "last_query:")) {
-            last_query = std.mem.trim(u8, trimmed["last_query:".len..], " \t");
-            continue;
-        }
-        if (std.mem.startsWith(u8, trimmed, "last_selection:")) {
-            last_selection = std.mem.trim(u8, trimmed["last_selection:".len..], " \t");
-            continue;
-        }
-        if (std.mem.startsWith(u8, trimmed, "last_selection_time:")) {
-            const raw = std.mem.trim(u8, trimmed["last_selection_time:".len..], " \t");
-            last_selection_time = std.fmt.parseInt(i64, raw, 10) catch 0;
-            continue;
-        }
-        if (std.mem.startsWith(u8, trimmed, "last_entry_time:")) {
-            const raw = std.mem.trim(u8, trimmed["last_entry_time:".len..], " \t");
-            last_selection_time = std.fmt.parseInt(i64, raw, 10) catch 0;
-            continue;
+        if (fieldValue(trimmed, "last_query:")) |value| {
+            last_query = value;
+        } else if (fieldValue(trimmed, "last_selection:")) |value| {
+            last_selection = value;
+        } else if (fieldValue(trimmed, "last_selection_time:") orelse fieldValue(trimmed, "last_entry_time:")) |value| {
+            // last_entry_time is the legacy gmenu name
+            last_selection_time = std.fmt.parseInt(i64, value, 10) catch 0;
         }
     }
 
@@ -53,6 +42,11 @@ pub fn load(allocator: std.mem.Allocator, menu_id: []const u8) !?State {
         .last_selection = last_selection,
         .last_selection_time = last_selection_time,
     };
+}
+
+fn fieldValue(line: []const u8, key: []const u8) ?[]const u8 {
+    if (!std.mem.startsWith(u8, line, key)) return null;
+    return std.mem.trim(u8, line[key.len..], " \t");
 }
 
 pub fn save(allocator: std.mem.Allocator, menu_id: []const u8, state: State) !void {
