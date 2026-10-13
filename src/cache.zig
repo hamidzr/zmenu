@@ -82,9 +82,7 @@ fn cacheDir(allocator: std.mem.Allocator, menu_id: []const u8) ![]const u8 {
 }
 
 fn cacheRoot(allocator: std.mem.Allocator) ![]const u8 {
-    if (io_compat.getEnvVarOwned(allocator, "XDG_CACHE_HOME")) |dir| return dir else |err| {
-        if (err != error.EnvironmentVariableNotFound) return err;
-    }
+    if (try io_compat.getEnvVarOwnedOptional(allocator, "XDG_CACHE_HOME")) |dir| return dir;
 
     const home = try io_compat.getEnvVarOwned(allocator, "HOME");
     if (builtin.os.tag == .macos) {

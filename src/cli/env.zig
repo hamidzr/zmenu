@@ -116,10 +116,7 @@ pub fn applyEnv(allocator: std.mem.Allocator, config: *appconfig.Config) !void {
 
 /// null when the variable is unset
 fn envValue(allocator: std.mem.Allocator, name: []const u8) !?[:0]const u8 {
-    const value = io_compat.getEnvVarOwned(allocator, name) catch |err| switch (err) {
-        error.EnvironmentVariableNotFound => return null,
-        else => return err,
-    };
+    const value = try io_compat.getEnvVarOwnedOptional(allocator, name) orelse return null;
     defer allocator.free(value);
     return try allocator.dupeSentinel(u8, value, 0);
 }

@@ -85,3 +85,11 @@ pub fn getEnvVarOwned(allocator: std.mem.Allocator, name: []const u8) EnvError![
     const value_ptr = std.c.getenv(name_z) orelse return error.EnvironmentVariableNotFound;
     return allocator.dupe(u8, std.mem.sliceTo(value_ptr, 0));
 }
+
+/// null when the variable is unset
+pub fn getEnvVarOwnedOptional(allocator: std.mem.Allocator, name: []const u8) std.mem.Allocator.Error!?[]const u8 {
+    return getEnvVarOwned(allocator, name) catch |err| switch (err) {
+        error.EnvironmentVariableNotFound => null,
+        error.OutOfMemory => |e| e,
+    };
+}

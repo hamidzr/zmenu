@@ -68,18 +68,11 @@ pub fn makePathAbsolute(path: []const u8) !void {
 }
 
 fn homeDir(allocator: std.mem.Allocator) !?[]const u8 {
-    return io_compat.getEnvVarOwned(allocator, "HOME") catch |err| switch (err) {
-        error.EnvironmentVariableNotFound => null,
-        else => return err,
-    };
+    return io_compat.getEnvVarOwnedOptional(allocator, "HOME");
 }
 
 fn userConfigDir(allocator: std.mem.Allocator, home: ?[]const u8) !?[]const u8 {
-    if (io_compat.getEnvVarOwned(allocator, "XDG_CONFIG_HOME")) |dir| {
-        return @as(?[]const u8, dir);
-    } else |err| {
-        if (err != error.EnvironmentVariableNotFound) return err;
-    }
+    if (try io_compat.getEnvVarOwnedOptional(allocator, "XDG_CONFIG_HOME")) |dir| return dir;
     if (home == null) return null;
     if (builtin.os.tag == .macos) {
         const path = try std.fs.path.join(allocator, &.{ home.?, "Library", "Application Support" });
