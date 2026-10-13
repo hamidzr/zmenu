@@ -38,35 +38,24 @@ fn existingPidIsRunning(pid_path: []const u8) !bool {
 
     const contents = io_compat.readAllFile(std.heap.page_allocator, file, 64) catch return false;
     defer std.heap.page_allocator.free(contents);
-    const trimmed = std.mem.trim(u8, contents, " \t\r\n");
-    if (trimmed.len == 0) {
-        io_compat.deleteFileAbsolute(pid_path) catch {};
-        return false;
+    if (parsePid(contents)) |pid| {
+        if (pidIsAlive(pid)) return true;
     }
 
-    const parsed_pid = std.fmt.parseInt(std.posix.pid_t, trimmed, 10) catch {
-        io_compat.deleteFileAbsolute(pid_path) catch {};
-        return false;
-    };
-    if (parsed_pid <= 0) {
-        io_compat.deleteFileAbsolute(pid_path) catch {};
-        return false;
-    }
-    if (pidIsAlive(parsed_pid)) {
-        return true;
-    }
-
+    // empty, garbage or dead pid: clear it so this instance can claim the file
     io_compat.deleteFileAbsolute(pid_path) catch {};
     return false;
 }
 
+fn parsePid(contents: []const u8) ?std.posix.pid_t {
+    const trimmed = std.mem.trim(u8, contents, " \t\r\n");
+    const pid = std.fmt.parseInt(std.posix.pid_t, trimmed, 10) catch return null;
+    return if (pid > 0) pid else null;
+}
+
+/// only ESRCH means gone; EPERM and friends mean someone owns it
 fn pidIsAlive(pid: std.posix.pid_t) bool {
-    if (pid <= 0) return false;
-    std.posix.kill(pid, @fromBackingInt(@intCast(0))) catch |err| switch (err) {
-        error.ProcessNotFound => return false,
-        error.PermissionDenied => return true,
-        else => return true,
-    };
+    std.posix.kill(pid, @fromBackingInt(@intCast(0))) catch |err| return err != error.ProcessNotFound;
     return true;
 }
 
