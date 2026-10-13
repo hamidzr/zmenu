@@ -2,58 +2,33 @@ const std = @import("std");
 const appconfig = @import("../config.zig");
 
 pub fn applySearchMethod(config: *appconfig.Config, value: []const u8) !void {
-    if (std.ascii.eqlIgnoreCase(value, "direct")) {
-        config.search.method = .direct;
-        return;
-    }
-    if (std.ascii.eqlIgnoreCase(value, "fuzzy")) {
-        config.search.method = .fuzzy;
-        return;
-    }
-    if (std.ascii.eqlIgnoreCase(value, "fuzzy1")) {
-        config.search.method = .fuzzy1;
-        return;
-    }
-    if (std.ascii.eqlIgnoreCase(value, "fuzzy3")) {
-        config.search.method = .fuzzy3;
-        return;
-    }
-    if (std.ascii.eqlIgnoreCase(value, "default")) {
-        config.search.method = .default;
-        return;
+    for ([_]@TypeOf(config.search.method){ .direct, .fuzzy, .fuzzy1, .fuzzy3, .default }) |method| {
+        if (std.ascii.eqlIgnoreCase(value, @tagName(method))) {
+            config.search.method = method;
+            return;
+        }
     }
     return error.InvalidSearchMethod;
 }
 
 pub fn parseBool(value: []const u8) !bool {
-    if (std.ascii.eqlIgnoreCase(value, "true") or std.ascii.eqlIgnoreCase(value, "1") or std.ascii.eqlIgnoreCase(value, "yes") or std.ascii.eqlIgnoreCase(value, "on")) {
-        return true;
-    }
-    if (std.ascii.eqlIgnoreCase(value, "false") or std.ascii.eqlIgnoreCase(value, "0") or std.ascii.eqlIgnoreCase(value, "no") or std.ascii.eqlIgnoreCase(value, "off")) {
-        return false;
-    }
+    if (eqlAnyIgnoreCase(value, &.{ "true", "1", "yes", "on" })) return true;
+    if (eqlAnyIgnoreCase(value, &.{ "false", "0", "no", "off" })) return false;
     return error.InvalidBool;
 }
 
+/// bool words map to on/off, plus auto
 pub fn parseNumericSelectionMode(value: []const u8) !appconfig.NumericSelectionMode {
-    if (std.ascii.eqlIgnoreCase(value, "off") or
-        std.ascii.eqlIgnoreCase(value, "false") or
-        std.ascii.eqlIgnoreCase(value, "0") or
-        std.ascii.eqlIgnoreCase(value, "no"))
-    {
-        return .off;
+    if (std.ascii.eqlIgnoreCase(value, "auto")) return .auto;
+    const enabled = parseBool(value) catch return error.InvalidNumericSelectionMode;
+    return if (enabled) .on else .off;
+}
+
+fn eqlAnyIgnoreCase(value: []const u8, words: []const []const u8) bool {
+    for (words) |word| {
+        if (std.ascii.eqlIgnoreCase(value, word)) return true;
     }
-    if (std.ascii.eqlIgnoreCase(value, "on") or
-        std.ascii.eqlIgnoreCase(value, "true") or
-        std.ascii.eqlIgnoreCase(value, "1") or
-        std.ascii.eqlIgnoreCase(value, "yes"))
-    {
-        return .on;
-    }
-    if (std.ascii.eqlIgnoreCase(value, "auto")) {
-        return .auto;
-    }
-    return error.InvalidNumericSelectionMode;
+    return false;
 }
 
 pub fn parseColorOptional(value: []const u8) !?appconfig.Color {
