@@ -178,11 +178,7 @@ pub const Model = struct {
                 self.scores[match.index] = match.score;
             }
         }
-        if (self.filtered.items.len == 0) {
-            self.selected = -1;
-        } else {
-            self.selected = 0;
-        }
+        self.selected = if (self.filtered.items.len == 0) -1 else 0;
     }
 
     pub fn appendItems(self: *Model, allocator: std.mem.Allocator, new_items: []const MenuItem) !void {
@@ -264,22 +260,9 @@ pub const Model = struct {
     pub fn setItems(self: *Model, allocator: std.mem.Allocator, new_items: []const MenuItem) !void {
         if (self.unique) self.seen.clearRetainingCapacity();
 
-        var dedup_buf: ?[]MenuItem = null;
-        defer if (dedup_buf) |buf| allocator.free(buf);
-        var to_set: []const MenuItem = new_items;
-        if (self.unique and new_items.len > 0) {
-            const buf = try allocator.alloc(MenuItem, new_items.len);
-            var write_idx: usize = 0;
-            for (new_items) |item| {
-                const gop = try self.seen.getOrPut(allocator, item.label);
-                if (gop.found_existing) continue;
-                buf[write_idx] = item;
-                write_idx += 1;
-            }
-            dedup_buf = buf;
-            to_set = buf[0..write_idx];
-        }
-
+        const filter_result = try self.filterUniqueIncoming(allocator, new_items);
+        defer if (filter_result.owned) |buf| allocator.free(buf);
+        const to_set = filter_result.items;
         const new_len = to_set.len;
 
         self.items = try allocator.realloc(self.items, new_len);
@@ -309,12 +292,7 @@ pub const Model = struct {
         }
 
         const count: isize = @intCast(self.filtered.items.len);
-        var next = self.selected;
-        if (next < 0) next = 0;
-        next += delta;
-        while (next < 0) next += count;
-        while (next >= count) next -= count;
-        self.selected = next;
+        self.selected = @mod(@max(self.selected, 0) + delta, count);
     }
 
     pub fn selectedRow(self: *Model) ?usize {
