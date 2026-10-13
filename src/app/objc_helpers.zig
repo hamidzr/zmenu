@@ -23,6 +23,18 @@ pub fn nsString(str: [*:0]const u8) objc.Object {
     return NSString.msgSend(objc.Object, "stringWithUTF8String:", .{str});
 }
 
+/// fire `selector` on `target` from the current run loop
+pub fn scheduleTimer(interval: f64, target: objc.Object, selector: [:0]const u8, repeats: bool) void {
+    const NSTimer = objc.getClass("NSTimer").?;
+    _ = NSTimer.msgSend(objc.Object, "scheduledTimerWithTimeInterval:target:selector:userInfo:repeats:", .{
+        interval,
+        target,
+        objc.sel(selector),
+        @as(objc.c.id, null),
+        repeats,
+    });
+}
+
 pub fn nsColor(color: appconfig.Color) objc.Object {
     const NSColor = objc.getClass("NSColor").?;
     return NSColor.msgSend(objc.Object, "colorWithSRGBRed:green:blue:alpha:", .{

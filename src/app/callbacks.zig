@@ -378,14 +378,7 @@ pub fn onUpdateTimer(target: objc.c.id, sel: objc.c.SEL, timer: objc.c.id) callc
 
 fn scheduleFocusLossCancel() void {
     const app_state = state.g_state orelse return;
-    const NSTimer = objc.getClass("NSTimer").?;
-    _ = NSTimer.msgSend(objc.Object, "scheduledTimerWithTimeInterval:target:selector:userInfo:repeats:", .{
-        @as(f64, 0.04),
-        app_state.handler,
-        objc.sel("onFocusLossTimer:"),
-        @as(objc.c.id, null),
-        false,
-    });
+    objc_helpers.scheduleTimer(0.04, app_state.handler, "onFocusLossTimer:", false);
 }
 
 pub fn resignKeyWindow(target: objc.c.id, sel: objc.c.SEL) callconv(.c) void {

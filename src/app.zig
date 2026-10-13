@@ -23,6 +23,7 @@ const nsFontWeight = objc_helpers.nsFontWeight;
 const lineHeight = objc_helpers.lineHeight;
 const font_weight_medium = objc_helpers.font_weight_medium;
 const applyPlaceholderColor = objc_helpers.applyPlaceholderColor;
+const scheduleTimer = objc_helpers.scheduleTimer;
 
 const startUpdateQueue = updates.startUpdateQueue;
 const followStdinThread = updates.followStdinThread;
@@ -419,14 +420,7 @@ pub fn run(config: appconfig.Config) !void {
             _ = std.Thread.spawn(.{}, followStdinThread, .{queue_ptr}) catch {};
         }
         if (config.follow_stdin or config.ipc_only) {
-            const NSTimer = objc.getClass("NSTimer").?;
-            _ = NSTimer.msgSend(objc.Object, "scheduledTimerWithTimeInterval:target:selector:userInfo:repeats:", .{
-                @as(f64, 0.2),
-                handler,
-                objc.sel("onUpdateTimer:"),
-                @as(objc.c.id, null),
-                true,
-            });
+            scheduleTimer(0.2, handler, "onUpdateTimer:", true);
         }
     }
 
@@ -435,10 +429,7 @@ pub fn run(config: appconfig.Config) !void {
     table_view.msgSend(void, "setDelegate:", .{data_source});
 
     if (config.startup_profile) {
-        const NSTimer = objc.getClass("NSTimer").?;
-        _ = NSTimer.msgSend(objc.Object, "scheduledTimerWithTimeInterval:target:selector:userInfo:repeats:", .{
-            @as(f64, 0.001), handler, objc.sel("onStartupProfileTimer:"), @as(objc.c.id, null), true,
-        });
+        scheduleTimer(0.001, handler, "onStartupProfileTimer:", true);
     }
 
     if (config.render_bench) {
@@ -451,14 +442,7 @@ pub fn run(config: appconfig.Config) !void {
         logic.applyFilter(&app_state, "");
     }
     if (config.render_bench) {
-        const NSTimer = objc.getClass("NSTimer").?;
-        _ = NSTimer.msgSend(objc.Object, "scheduledTimerWithTimeInterval:target:selector:userInfo:repeats:", .{
-            @as(f64, 0.2),
-            handler,
-            objc.sel("onRenderBench:"),
-            @as(objc.c.id, null),
-            false,
-        });
+        scheduleTimer(0.2, handler, "onRenderBench:", false);
     } else {
         logic.maybeAutoAccept(&app_state, .initial);
     }
