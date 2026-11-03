@@ -155,9 +155,9 @@ fn renderMatches(
         if (containsInsensitive(item.label, query)) {
             match_index += 1;
             if (numeric_enabled and match_index <= appconfig.numeric_shortcut_max) {
-                try io_compat.filePrint(tty, "{d}. {s}\r\n", .{ match_index, item.label });
+                try io_compat.filePrint(tty, "{d}. {f}\r\n", .{ match_index, printable(item.label) });
             } else {
-                try io_compat.filePrint(tty, "{s}\r\n", .{item.label});
+                try io_compat.filePrint(tty, "{f}\r\n", .{printable(item.label)});
             }
         }
     }
@@ -166,4 +166,21 @@ fn renderMatches(
         try io_compat.filePrint(tty, "(no matches)\r\n", .{});
     }
     try io_compat.filePrint(tty, "--------------------------------\r\n", .{});
+}
+
+/// labels come from stdin, so escape sequences in them must not reach the tty
+/// as live control codes (cursor moves, title or clipboard writes)
+fn printable(text: []const u8) std.fmt.Alt([]const u8, formatPrintable) {
+    return .{ .data = text };
+}
+
+fn formatPrintable(text: []const u8, writer: *std.Io.Writer) std.Io.Writer.Error!void {
+    for (text) |byte| {
+        try writer.writeByte(if (byte < 0x20 or byte == 0x7f) '?' else byte);
+    }
+}
+
+test printable {
+    try std.testing.expectFmt("a?]52;c;eA==?b", "{f}", .{printable("a\x1b]52;c;eA==\x07b")});
+    try std.testing.expectFmt("caf\xc3\xa9", "{f}", .{printable("caf\xc3\xa9")});
 }
