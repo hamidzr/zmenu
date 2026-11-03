@@ -20,7 +20,17 @@ pub const NSRect = extern struct {
 
 pub fn nsString(str: [*:0]const u8) objc.Object {
     const NSString = objc.getClass("NSString").?;
-    return NSString.msgSend(objc.Object, "stringWithUTF8String:", .{str});
+    const result = NSString.msgSend(objc.Object, "stringWithUTF8String:", .{str});
+    if (result.value != null) return result;
+
+    // invalid UTF-8 (e.g. a Latin-1 stdin line) yields nil, and AppKit setters
+    // like setStringValue: raise on nil, so show U+FFFD for the bad bytes
+    const lossy = std.fmt.allocPrintSentinel(std.heap.c_allocator, "{f}", .{std.unicode.fmtUtf8(std.mem.sliceTo(str, 0))}, 0) catch
+        return NSString.msgSend(objc.Object, "string", .{});
+    defer std.heap.c_allocator.free(lossy);
+    const fallback = NSString.msgSend(objc.Object, "stringWithUTF8String:", .{lossy.ptr});
+    if (fallback.value != null) return fallback;
+    return NSString.msgSend(objc.Object, "string", .{});
 }
 
 /// fire `selector` on `target` from the current run loop
