@@ -11,7 +11,7 @@ The socket lives in the OS temp directory:
 - `$TMPDIR/zmenu.<menu_id>.sock` when `--menu-id` (or config `menu_id`) is set
 - `$TMPDIR/zmenu.sock` when no menu id is provided
 
-`$TMPDIR` falls back to `$TMP`, `$TEMP`, then `/tmp`.
+`$TMPDIR` falls back to `$TMP`, `$TEMP` (empty values are skipped), then the per-user Darwin temp dir (`confstr(_CS_DARWIN_USER_TEMP_DIR)`), then `$XDG_RUNTIME_DIR`, then a 0700 `/tmp/zmenu-<uid>`. Never the shared `/tmp`. combo-switcher (`pkg/usertmp`) computes the same directory; change both together.
 
 ## Framing
 
