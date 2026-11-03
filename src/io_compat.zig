@@ -60,7 +60,9 @@ pub fn readAllFromFd(allocator: std.mem.Allocator, fd: std.posix.fd_t, max_bytes
     while (true) {
         const n = try std.posix.read(fd, &buf);
         if (n == 0) break;
-        if (out.items.len > max_bytes - n) return error.StreamTooLong;
+        // out.items.len never exceeds max_bytes, so this cannot underflow even
+        // when a single read returns more than max_bytes
+        if (n > max_bytes - out.items.len) return error.StreamTooLong;
         try out.appendSlice(allocator, buf[0..n]);
     }
 

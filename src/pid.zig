@@ -36,13 +36,14 @@ fn existingPidIsRunning(pid_path: []const u8) !bool {
     };
     defer io_compat.closeFile(file);
 
-    const contents = io_compat.readAllFile(std.heap.page_allocator, file, 64) catch return false;
-    defer std.heap.page_allocator.free(contents);
+    // an unreadable or oversized file is garbage too
+    const contents: []const u8 = io_compat.readAllFile(std.heap.page_allocator, file, 64) catch "";
+    defer if (contents.len > 0) std.heap.page_allocator.free(contents);
     if (parsePid(contents)) |pid| {
         if (pidIsAlive(pid)) return true;
     }
 
-    // empty, garbage or dead pid: clear it so this instance can claim the file
+    // empty, garbage, oversized or dead pid: clear it so this instance can claim the file
     io_compat.deleteFileAbsolute(pid_path) catch {};
     return false;
 }
@@ -76,7 +77,8 @@ test "pid file blocks a second instance and stale files are replaced" {
     try std.testing.expectError(error.AlreadyRunning, create(allocator, "work"));
     remove(path);
 
-    for ([_][]const u8{ "", "garbage\n", "0\n", "-5\n" }) |stale| {
+    const oversized: [200]u8 = @splat('9');
+    for ([_][]const u8{ "", "garbage\n", "0\n", "-5\n", &oversized }) |stale| {
         const file = try io_compat.createFileAbsolute(path, .{ .truncate = true });
         try io_compat.filePrint(file, "{s}", .{stale});
         io_compat.closeFile(file);
