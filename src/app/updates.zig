@@ -3,6 +3,7 @@ const appconfig = @import("../config.zig");
 const ipc = @import("../ipc.zig");
 const io_compat = @import("../io_compat.zig");
 const menu = @import("../menu.zig");
+const test_env = @import("../test_env.zig");
 
 const ipc_max_payload: usize = 1024 * 1024;
 const stdin_max_line_bytes: usize = 64 * 1024;
@@ -223,6 +224,11 @@ fn openIpcServer(path: []const u8) !std.Io.net.Server {
     };
 
     const address = try std.Io.net.UnixAddress.init(path);
+    // connect needs write access to the socket file; bind it 0600 so a
+    // permissive umask (002, 000) can't open it to other users when the temp
+    // dir is shared (TMPDIR unset, falling back to /tmp)
+    const old_mask = std.c.umask(0o077);
+    defer _ = std.c.umask(old_mask);
     return address.listen(io_compat.globalIo(), .{});
 }
 
@@ -336,6 +342,20 @@ test "oversized stdin line is skipped and later lines survive" {
     }
     try std.testing.expectEqual(@as(usize, 1), drained.len);
     try std.testing.expectEqualStrings("valid", drained[0].line.?);
+}
+
+test "IPC socket is owner-only" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const scratch = try test_env.Scratch.init(arena.allocator(), "ipcsock");
+    defer scratch.deinit();
+
+    const path = try scratch.path("/zmenu.sock");
+    var server = try openIpcServer(path);
+    defer server.deinit(io_compat.globalIo());
+
+    const stat = try std.Io.Dir.cwd().statFile(io_compat.globalIo(), path, .{});
+    try std.testing.expectEqual(@as(std.posix.mode_t, 0), stat.permissions.toMode() & 0o077);
 }
 
 test "empty IPC set enqueues a clear signal" {
