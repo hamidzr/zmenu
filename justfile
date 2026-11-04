@@ -1,21 +1,27 @@
 # zmenu justfile
 
+# list recipes
+default:
+	@just --list
+
 # fetch zig package dependencies
 deps:
 	zig build --fetch
+alias get-deps := deps
 
-# alias for deps
-get-deps: deps
-
+# build zmenu and zmenuctl
 build:
 	zig build
 
+# build and launch the gui
 run:
 	zig build run
 
+# launch with sample stdin items
 dev:
 	printf "alpha\nbeta\ngamma\ndelta\nepsilon\n" | zig build run
 
+# run zig tests
 test:
 	zig build test
 
@@ -23,21 +29,21 @@ test:
 fmt:
 	zig fmt src/
 
-# alias for fmt
-format: fmt
-fix: fmt
+alias format := fmt
+alias fix := fmt
 
 # run all static analysis without changing filesystem
 check:
 	zig fmt --check src/
 	zig build test
 
-# alias for check
-lint: check
+alias lint := check
 
+# remove build artifacts
 clean:
 	rm -rf zig-out .zig-cache bin
 
+# capture and compare a ui snapshot
 visual:
 	scripts/visual_test.sh
 
@@ -53,6 +59,7 @@ render-bench:
 startup-bench:
 	scripts/startup_bench.sh
 
+# build and copy binaries to ~/.local/bin
 install: build
 	mkdir -p ~/.local/bin
 	rm -f ~/.local/bin/zmenu ~/.local/bin/zmenuctl
