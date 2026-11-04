@@ -151,4 +151,4 @@ Example stdout:
 
 ## Support
 
-zmenu is free. If it saves you time, you can [support us](https://latentbyte.com/support?app=zmenu) with a tip.
+zmenu is free. If it saves you time, you can [support us](https://latentbyte.com/support-us?app=zmenu&utm_source=zmenu&utm_medium=github&utm_campaign=support) with a tip.
