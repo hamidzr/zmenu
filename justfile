@@ -1,5 +1,7 @@
 # zmenu justfile
 
+set shell := ["bash", "-euo", "pipefail", "-c"]
+
 # list recipes
 default:
 	@just --list
