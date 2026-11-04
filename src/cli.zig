@@ -72,5 +72,7 @@ fn printHelp() void {
         \\      --init-config            Write default config and exit
         \\      --startup-profile        Log startup stages to stderr
         \\
+        \\Support us: https://latentbyte.com/support?app=zmenu
+        \\
     , .{}) catch {};
 }

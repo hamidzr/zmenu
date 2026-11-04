@@ -148,3 +148,7 @@ Example stdout:
 - Set `numeric_selection_mode: on` to always enable numeric shortcuts, or `off` to always disable them.
 - `no_numeric_selection` and `GMENU_NO_NUMERIC_SELECTION` are still supported as legacy on/off aliases.
 - Terminal mode is intentionally minimal and chooses the first match on Enter.
+
+## Support
+
+zmenu is free. If it saves you time, you can [support us](https://latentbyte.com/support?app=zmenu) with a tip.
