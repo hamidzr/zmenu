@@ -69,8 +69,10 @@ pub const Header = struct {
 pub fn header(padding: f64, list_width: f64, text_inset: f64, text_width: f64, spinner: bool) Header {
     const counter_width = std.math.clamp(text_width + counter_text_pad, counter_min_width, @max(list_width * counter_max_fraction, counter_min_width));
     const counter_x = padding + list_width - counter_right_inset - counter_width;
-    const spinner_x = counter_x - spinner_gap - spinner_side;
-    const right_limit = if (spinner) spinner_x else counter_x;
+    // the spinner hugs the text (right-aligned in a column that may be wider), never leaving the column
+    const text_left = @max(counter_x + counter_width - text_width - counter_text_pad / 2.0, counter_x);
+    const spinner_x = text_left - spinner_gap - spinner_side;
+    const right_limit = if (spinner) @min(spinner_x, counter_x) else counter_x;
     const field_x = padding + text_inset;
     return .{
         .search_width = @max(right_limit - field_gap - field_x, 0.0),
@@ -192,12 +194,20 @@ test "a long counter widens its column and narrows the search field" {
     try std.testing.expectApproxEqAbs(@as(f64, 392.4), huge.counter_width, 1e-9);
 }
 
-test "the spinner sits left of the counter and takes room from the field" {
+test "the spinner sits left of the counter text and takes room from the field" {
     const plain = header(14, 872, 10, 60, false);
     const spun = header(14, 872, 10, 60, true);
     try std.testing.expectEqual(plain.counter_x, spun.counter_x);
-    try std.testing.expectEqual(plain.counter_x - 6 - 16, spun.spinner_x);
-    try std.testing.expectEqual(plain.search_width - 22, spun.search_width);
+    // text is 60 wide in an 88 wide column: the spinner sits 6 before the text's left edge
+    try std.testing.expectEqual(plain.counter_x + 88 - 60 - 2 - 6 - 16, spun.spinner_x);
+    try std.testing.expect(spun.search_width <= plain.search_width);
+    try std.testing.expect(spun.spinner_x + spinner_side < plain.counter_x + plain.counter_width);
+}
+
+test "with a wide counter text the spinner narrows the search field" {
+    const plain = header(14, 872, 10, 200, false);
+    const spun = header(14, 872, 10, 200, true);
+    try std.testing.expect(spun.search_width < plain.search_width);
 }
 
 test "a tiny list never gets negative widths" {

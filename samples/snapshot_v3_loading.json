@@ -1,0 +1,5 @@
+{"v":3,"cmd":"set","loading":true,"items":[
+{"id":"win:1","label":"Inbox - Gmail","subtitle":"Safari","detail":"S2","kind":"window","icon":"/Applications/Safari.app"},
+{"id":"win:2","label":"zmenu - Terminal","subtitle":"Terminal","detail":"S1","kind":"window","icon":"/System/Applications/Utilities/Terminal.app"},
+{"id":"app:safari","label":"Safari","kind":"app","icon":"/Applications/Safari.app"}
+]}

@@ -395,9 +395,9 @@ fn pushMeta(queue: *UpdateQueue, batch: *std.ArrayList(ItemUpdate), meta: Meta, 
     batch.append(queue.allocator, .{ .kind = .meta, .source = .ipc, .line = line, .batch = batch_id }) catch queue.allocator.free(line);
 }
 
-/// parses a queued meta line; the result lives in `arena`
+/// parses a queued meta line; the result lives in `arena` and does not point into `line`
 pub fn parseMeta(arena: std.mem.Allocator, line: []const u8) ?Meta {
-    return std.json.parseFromSliceLeaky(Meta, arena, line, .{ .ignore_unknown_fields = true }) catch null;
+    return std.json.parseFromSliceLeaky(Meta, arena, line, .{ .ignore_unknown_fields = true, .allocate = .alloc_always }) catch null;
 }
 
 /// an object whose label is a non-blank string
@@ -487,6 +487,17 @@ test "loading and scopes ride along as a meta entry" {
     try std.testing.expectEqualStrings("tab", meta.scopes.?[0].kind);
     try std.testing.expectEqualStrings("Tabs", meta.scopes.?[0].label);
     try std.testing.expectEqual(UpdateKind.set, drained[1].kind);
+}
+
+test "parsed meta does not point into the freed line" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const line = try std.testing.allocator.dupe(u8, "{\"loading\":false,\"scopes\":[{\"prefix\":\"t\",\"kind\":\"tab\"}]}");
+    const meta = parseMeta(arena.allocator(), line).?;
+    @memset(line, 'x');
+    std.testing.allocator.free(line);
+    try std.testing.expectEqualStrings("t", meta.scopes.?[0].prefix);
+    try std.testing.expectEqualStrings("tab", meta.scopes.?[0].kind);
 }
 
 test "a message without loading or scopes resets them" {
