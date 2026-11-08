@@ -437,7 +437,10 @@ pub fn drainUpdates() void {
     if (has_item_updates and append_items.items.len > 0) {
         app_state.model.appendItems(app_state.allocator, append_items.items) catch return;
     }
-    if (has_item_updates) {
+    // the first update (or the end of the stream) ends "Loading..."
+    const first_load = !app_state.loaded and (has_item_updates or saw_stream_closed);
+    if (first_load) app_state.loaded = true;
+    if (has_item_updates or first_load) {
         logic.applyItemUpdate(app_state);
     }
     if (saw_stream_closed) {

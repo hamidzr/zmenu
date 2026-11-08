@@ -14,6 +14,7 @@ test {
     _ = @import("cli/parse.zig");
     _ = @import("terminal.zig");
     _ = @import("layout.zig");
+    _ = @import("display.zig");
 }
 
 // A set must become visible to the UI in one drain, never item by item.

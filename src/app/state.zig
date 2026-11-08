@@ -1,6 +1,7 @@
 const std = @import("std");
 const objc = @import("objc");
 const appconfig = @import("../config.zig");
+const display = @import("../display.zig");
 const layout = @import("../layout.zig");
 const menu = @import("../menu.zig");
 const theme = @import("theme.zig");
@@ -14,6 +15,7 @@ pub const AppState = struct {
     index_column: ?objc.Object,
     text_field: objc.Object,
     match_label: objc.Object,
+    message_label: objc.Object,
     handler: objc.Object,
     row_font: objc.Object,
     counter_font: objc.Object,
@@ -27,6 +29,9 @@ pub const AppState = struct {
     allocator: std.mem.Allocator,
     update_queue: ?*updates.UpdateQueue,
     stream_closed: bool,
+    /// false until a streaming source (IPC, followed stdin) delivers its first update
+    loaded: bool,
+    display_state: display.State = .list,
     last_keystroke_ms: i64,
     pending_stream_close_auto_accept: bool,
     had_focus: bool,

@@ -4,16 +4,14 @@ const menu = @import("menu.zig");
 pub const Decision = union(enum) {
     /// nothing to accept; keep the menu open
     ignore,
-    /// ipc-only with no matches exits as a user cancel
-    cancel,
     /// label is cached, output goes to stdout
     output: struct { label: []const u8, output: []const u8 },
 };
 
 pub fn decide(model: *menu.Model, ipc_only: bool, accept_custom_selection: bool, query: []const u8) Decision {
     if (model.filtered.items.len == 0) {
-        if (ipc_only) return .cancel;
-        if (!accept_custom_selection) return .ignore;
+        // ipc-only has no custom selection: there is no payload to print
+        if (ipc_only or !accept_custom_selection) return .ignore;
         return .{ .output = .{ .label = query, .output = query } };
     }
 
@@ -59,14 +57,14 @@ test "ipc-only accept prints the stored payload or label" {
     try expectOutput(decide(&model, true, true, ""), "beta", "beta");
 }
 
-test "no matches cancels in ipc-only, else custom or ignore" {
+test "no matches keeps the menu open in ipc-only, else custom or ignore" {
     const allocator = std.testing.allocator;
     var model = try testModel(allocator);
     defer model.deinit(allocator);
     model.applyFilter("zzz", .{ .levenshtein_fallback = false });
     try std.testing.expectEqual(@as(usize, 0), model.filtered.items.len);
 
-    try std.testing.expect(decide(&model, true, true, "zzz") == .cancel);
+    try std.testing.expect(decide(&model, true, true, "zzz") == .ignore);
     try std.testing.expect(decide(&model, false, false, "zzz") == .ignore);
     try expectOutput(decide(&model, false, true, "zzz"), "zzz", "zzz");
 }

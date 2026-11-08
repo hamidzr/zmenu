@@ -299,6 +299,28 @@ pub fn run(cli_config: appconfig.Config) !void {
     match_label.msgSend(void, "setTextColor:", .{palette.secondary});
     match_label.msgSend(void, "setFont:", .{counter_font});
 
+    // "Loading..." / "No results" line over the empty list, pinned to the first row slot
+    const message_font = nsFontWeight(clamp(config.row_height * 0.46, 13.0, 16.0), font_weight_medium);
+    const message_line_height = lineHeight(message_font);
+    const message_label = NSTextField.msgSend(objc.Object, "alloc", .{})
+        .msgSend(objc.Object, "initWithFrame:", .{NSRect{
+        .origin = .{
+            .x = padding,
+            .y = padding + list_height - config.row_height + (config.row_height - message_line_height) / 2.0 + objc_helpers.label_optical_offset,
+        },
+        .size = .{ .width = list_width, .height = message_line_height },
+    }});
+    message_label.msgSend(void, "setAutoresizingMask:", .{ns_view_min_y_margin});
+    message_label.msgSend(void, "setBezeled:", .{false});
+    message_label.msgSend(void, "setBordered:", .{false});
+    message_label.msgSend(void, "setDrawsBackground:", .{false});
+    message_label.msgSend(void, "setEditable:", .{false});
+    message_label.msgSend(void, "setSelectable:", .{false});
+    message_label.msgSend(void, "setAlignment:", .{@as(c_int, 1)}); // NSTextAlignmentCenter on macOS (2 is right)
+    message_label.msgSend(void, "setTextColor:", .{palette.secondary});
+    message_label.msgSend(void, "setFont:", .{message_font});
+    message_label.msgSend(void, "setHidden:", .{true});
+
     const table_frame = NSRect{
         .origin = .{ .x = 0, .y = 0 },
         .size = .{ .width = list_width, .height = list_height },
@@ -390,6 +412,7 @@ pub fn run(cli_config: appconfig.Config) !void {
     const field_bg = chrome.makeFieldBackground(field_bg_rect);
     field_bg.msgSend(void, "setAutoresizingMask:", .{ns_view_min_y_margin});
     content_view.msgSend(void, "addSubview:", .{field_bg});
+    content_view.msgSend(void, "addSubview:", .{message_label});
     content_view.msgSend(void, "addSubview:", .{text_field});
     if (match_label_width > 0) {
         content_view.msgSend(void, "addSubview:", .{match_label});
@@ -408,6 +431,7 @@ pub fn run(cli_config: appconfig.Config) !void {
         .index_column = index_column,
         .text_field = text_field,
         .match_label = match_label,
+        .message_label = message_label,
         .handler = handler,
         .row_font = table_font,
         .counter_font = counter_font,
@@ -419,6 +443,7 @@ pub fn run(cli_config: appconfig.Config) !void {
         .update_queue = queue.queue,
         .ipc_path = queue.ipc_path,
         .stream_closed = !config.follow_stdin and !config.ipc_only,
+        .loaded = !config.follow_stdin and !config.ipc_only,
         .last_keystroke_ms = 0,
         .pending_stream_close_auto_accept = false,
         .had_focus = false,

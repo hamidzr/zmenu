@@ -2,11 +2,11 @@ const std = @import("std");
 const objc = @import("objc");
 const accept = @import("../accept.zig");
 const cache = @import("../cache.zig");
-const exit_codes = @import("../exit_codes.zig");
 const io_compat = @import("../io_compat.zig");
 const pid = @import("../pid.zig");
 const time_compat = @import("../time_compat.zig");
 const objc_helpers = @import("objc_helpers.zig");
+const display = @import("../display.zig");
 const state = @import("state.zig");
 const views = @import("views.zig");
 
@@ -68,6 +68,12 @@ pub fn applyItemUpdate(app_state: *state.AppState) void {
 fn refreshView(app_state: *state.AppState, query: []const u8) void {
     // rows move under a possibly stationary pointer, so drop the stale hover
     app_state.hovered_row = null;
+    app_state.display_state = display.compute(
+        app_state.loaded,
+        app_state.model.items.len,
+        app_state.model.filtered.items.len,
+        query,
+    );
     fitWindow(app_state);
     if (app_state.index_column) |index_column| {
         const enabled = app_state.config.numericSelectionEnabled(app_state.model.filtered.items.len, query);
@@ -76,11 +82,13 @@ fn refreshView(app_state: *state.AppState, query: []const u8) void {
     app_state.table_view.msgSend(void, "reloadData", .{});
     updateSelection(app_state);
     updateMatchLabel(app_state);
+    updateMessage(app_state);
 }
 
 /// Resizes the window to the rows on show, keeping the top edge fixed so the
 /// search field does not move while typing. Subviews follow by autoresizing.
 pub fn fitWindow(app_state: *state.AppState) void {
+    // a message line takes the place of the first row
     const rows = app_state.metrics.rows(app_state.model.filtered.items.len);
     const height = app_state.metrics.windowHeight(rows);
     const frame = app_state.window.msgSend(objc_helpers.NSRect, "frame", .{});
@@ -90,6 +98,16 @@ pub fn fitWindow(app_state: *state.AppState) void {
         .size = .{ .width = frame.size.width, .height = height },
     };
     app_state.window.msgSend(void, "setFrame:display:", .{ resized, true });
+}
+
+/// shows the "Loading..." / "No results" line while the table has no rows
+fn updateMessage(app_state: *state.AppState) void {
+    const message = display.message(app_state.display_state) orelse {
+        app_state.message_label.msgSend(void, "setHidden:", .{true});
+        return;
+    };
+    app_state.message_label.msgSend(void, "setStringValue:", .{objc_helpers.nsString(message)});
+    app_state.message_label.msgSend(void, "setHidden:", .{false});
 }
 
 pub fn maybeAutoAccept(app_state: *state.AppState, trigger: AutoAcceptTrigger) void {
@@ -157,7 +175,6 @@ pub fn acceptSelection(app_state: *state.AppState) void {
     const config = app_state.config;
     switch (accept.decide(&app_state.model, config.ipc_only, config.accept_custom_selection, currentQuery(app_state))) {
         .ignore => return,
-        .cancel => quit(app_state, exit_codes.user_canceled),
         .output => |out| outputAndQuit(app_state, out.label, out.output),
     }
 }
