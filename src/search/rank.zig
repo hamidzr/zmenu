@@ -30,6 +30,31 @@ const dp_max_query: usize = 32;
 const unreachable_score: i32 = -1_000_000;
 const reachable_floor: i32 = unreachable_score / 2;
 
+/// A hit in the subtitle or keywords counts for a fraction of the same hit in
+/// the label, so "safari" ranks the Safari app above a tab that merely mentions
+/// it. Any label substring or acronym hit (>= `substring_base`) outranks every
+/// subtitle or keywords hit.
+const subtitle_divisor: i32 = 2;
+const keywords_divisor: i32 = 3;
+
+/// Score of one token against an item's label, subtitle and keywords (folded
+/// text; the latter two may be empty): the best of the label score and the
+/// reduced subtitle and keywords scores. Null when no field matches.
+pub fn docTokenScore(token: []const u8, label: []const u8, subtitle: []const u8, keywords: []const u8) ?i32 {
+    const in_label = tokenScore(token, label);
+    if (in_label) |score| {
+        if (score >= substring_base) return score;
+    }
+    var best = in_label;
+    if (subtitle.len > 0) {
+        if (tokenScore(token, subtitle)) |score| best = @max(best orelse 0, @divTrunc(score, subtitle_divisor));
+    }
+    if (keywords.len > 0) {
+        if (tokenScore(token, keywords)) |score| best = @max(best orelse 0, @divTrunc(score, keywords_divisor));
+    }
+    return best;
+}
+
 /// score of one token against a label, null when it does not match
 pub fn tokenScore(token: []const u8, label: []const u8) ?i32 {
     if (token.len == 0) return 0;
@@ -332,4 +357,28 @@ test "positions prefer the same occurrence the score does" {
     // the word-start occurrence beats the mid-word one
     const hit = tokenPositions("saf", "Unsafe safari", &out).?;
     try std.testing.expectEqual(@as(usize, 7), hit[0]);
+}
+
+test "label hits outrank subtitle and keywords hits" {
+    // exact label vs a tab whose subtitle is the same word
+    const app = docTokenScore("safari", "Safari", "", "").?;
+    const tab = docTokenScore("safari", "Inbox - Gmail", "Safari", "").?;
+    try std.testing.expect(app > tab);
+    // even a mid-label substring beats a perfect subtitle hit
+    const weak_label = docTokenScore("safari", "Unsafari", "", "").?;
+    try std.testing.expect(weak_label > tab);
+    // subtitle outranks keywords for the same hit
+    const keyword = docTokenScore("safari", "Inbox - Gmail", "", "Safari").?;
+    try std.testing.expect(tab > keyword);
+    try std.testing.expect(keyword > 0);
+}
+
+test "doc token score needs a hit in some field" {
+    try std.testing.expect(docTokenScore("zzz", "Safari", "web", "browser") == null);
+    try std.testing.expect(docTokenScore("web", "Safari", "web", "browser") != null);
+    try std.testing.expect(docTokenScore("brow", "Safari", "web", "browser") != null);
+    // a weak label subsequence does not hide a strong subtitle hit
+    const label_loose = tokenScore("saf", "s a x f").?;
+    const doc = docTokenScore("saf", "s a x f", "Safari", "").?;
+    try std.testing.expect(doc >= label_loose);
 }

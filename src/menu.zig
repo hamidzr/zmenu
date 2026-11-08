@@ -117,18 +117,34 @@ pub fn readItems(allocator: std.mem.Allocator, unique: bool) ![]MenuItem {
     return items.toOwnedSlice(allocator);
 }
 
-/// folded search text for a label; an OOM falls back to the raw label
-fn foldLabel(arena: *std.heap.ArenaAllocator, label: []const u8) []const u8 {
-    return search.fold.foldAlloc(arena.allocator(), label) catch label;
+/// folded search text; an OOM falls back to the raw text
+fn foldText(arena: *std.heap.ArenaAllocator, text: []const u8) []const u8 {
+    return search.fold.foldAlloc(arena.allocator(), text) catch text;
+}
+
+/// What an item is searched by, folded once here instead of per keystroke.
+/// Template items are never matched, so only their label is kept.
+fn makeDoc(arena: *std.heap.ArenaAllocator, item: MenuItem) search.Doc {
+    const label = foldText(arena, item.label);
+    if (item.template != .none) return .{ .label = label, .haystack = label };
+    const subtitle = if (item.subtitle) |text| foldText(arena, text) else "";
+    const keywords = if (item.keywords) |text| foldText(arena, text) else "";
+    if (subtitle.len == 0 and keywords.len == 0) return .{ .label = label, .haystack = label };
+    const haystack = std.fmt.allocPrint(arena.allocator(), "{s}  {s} {s}", .{ label, subtitle, keywords }) catch label;
+    return .{ .label = label, .subtitle = subtitle, .keywords = keywords, .haystack = haystack };
 }
 
 pub const Model = struct {
     items: []MenuItem,
-    /// diacritic-folded search text, parallel to items (display uses item.label)
-    labels: [][]const u8,
-    /// owns folded copies of labels that contain accents
+    /// diacritic-folded search text, parallel to items (display uses the item's own text)
+    docs: []search.Doc,
+    /// owns the folded copies
     fold_arena: std.heap.ArenaAllocator,
     matches: std.ArrayList(search.Match),
+    /// items the query is matched against (no template items), ascending
+    candidates: std.ArrayList(usize),
+    /// scratch for `search.filterDocs`
+    view: std.ArrayList([]const u8),
     /// items matching the query, best first
     regular: std.ArrayList(usize),
     /// what the list shows, top to bottom
@@ -163,30 +179,24 @@ pub const Model = struct {
 
         var fold_arena = std.heap.ArenaAllocator.init(allocator);
         errdefer fold_arena.deinit();
-        const labels = try allocator.alloc([]const u8, working.len);
+        const docs = try allocator.alloc(search.Doc, working.len);
         for (working, 0..) |*item, idx| {
             item.index = idx;
-            labels[idx] = foldLabel(&fold_arena, item.label);
+            docs[idx] = makeDoc(&fold_arena, item.*);
         }
-
-        var matches = std.ArrayList(search.Match).empty;
-        try matches.ensureTotalCapacity(allocator, working.len);
-
-        var regular = std.ArrayList(usize).empty;
-        try regular.ensureTotalCapacity(allocator, working.len);
-        var rows = std.ArrayList(Row).empty;
-        try rows.ensureTotalCapacity(allocator, working.len);
 
         const scores = try allocator.alloc(i32, working.len);
         @memset(scores, 0);
 
-        return .{
+        var model: Model = .{
             .items = working,
-            .labels = labels,
+            .docs = docs,
             .fold_arena = fold_arena,
-            .matches = matches,
-            .regular = regular,
-            .rows = rows,
+            .matches = .empty,
+            .candidates = .empty,
+            .view = .empty,
+            .regular = .empty,
+            .rows = .empty,
             .scores = scores,
             .match_count = 0,
             .selected = -1,
@@ -194,17 +204,22 @@ pub const Model = struct {
             .seen = seen,
             .allocator = allocator,
         };
+        try model.reserveRows(allocator, working.len);
+        model.reindex();
+        return model;
     }
 
     pub fn deinit(self: *Model, allocator: std.mem.Allocator) void {
         self.clearAnchor();
         self.fold_arena.deinit();
         self.matches.deinit(allocator);
+        self.candidates.deinit(allocator);
+        self.view.deinit(allocator);
         self.regular.deinit(allocator);
         self.rows.deinit(allocator);
         self.seen.deinit(allocator);
         allocator.free(self.items);
-        allocator.free(self.labels);
+        allocator.free(self.docs);
         allocator.free(self.scores);
     }
 
@@ -253,7 +268,7 @@ pub const Model = struct {
         @memset(self.scores, 0);
         var fold_buf: [512]u8 = undefined;
         const folded_query = search.fold.foldBuf(&fold_buf, query);
-        search.filterIndices(self.labels, folded_query, opts, &self.matches, &self.regular);
+        search.filterDocs(self.docs, self.candidates.items, folded_query, opts, &self.matches, &self.regular, &self.view);
         self.match_count = self.matches.items.len;
         for (self.matches.items) |match| {
             if (match.index < self.scores.len) {
@@ -264,7 +279,17 @@ pub const Model = struct {
         for (self.regular.items) |item_index| self.rows.appendAssumeCapacity(.{ .item = item_index });
     }
 
+    /// rebuild the candidate list after the items changed; capacity is reserved
+    fn reindex(self: *Model) void {
+        self.candidates.clearRetainingCapacity();
+        for (self.items, 0..) |item, index| {
+            if (item.template == .none) self.candidates.appendAssumeCapacity(index);
+        }
+    }
+
     fn reserveRows(self: *Model, allocator: std.mem.Allocator, count: usize) !void {
+        try self.candidates.ensureTotalCapacity(allocator, count);
+        try self.view.ensureTotalCapacity(allocator, count);
         try self.matches.ensureTotalCapacity(allocator, count);
         try self.regular.ensureTotalCapacity(allocator, count);
         try self.rows.ensureTotalCapacity(allocator, count);
@@ -321,7 +346,7 @@ pub const Model = struct {
         const new_len = old_len + to_add.len;
 
         self.items = try allocator.realloc(self.items, new_len);
-        self.labels = try allocator.realloc(self.labels, new_len);
+        self.docs = try allocator.realloc(self.docs, new_len);
         self.scores = try allocator.realloc(self.scores, new_len);
 
         var i: usize = 0;
@@ -330,11 +355,12 @@ pub const Model = struct {
             var item = to_add[i];
             item.index = idx;
             self.items[idx] = item;
-            self.labels[idx] = foldLabel(&self.fold_arena, item.label);
+            self.docs[idx] = makeDoc(&self.fold_arena, item);
             self.scores[idx] = 0;
         }
 
         try self.reserveRows(allocator, new_len);
+        self.reindex();
     }
 
     pub fn prependItems(self: *Model, allocator: std.mem.Allocator, new_items: []const MenuItem) !void {
@@ -347,14 +373,14 @@ pub const Model = struct {
         self.captureAnchor();
 
         const old_items = self.items;
-        const old_labels = self.labels;
+        const old_docs = self.docs;
         const old_scores = self.scores;
 
         const old_len = old_items.len;
         const new_len = old_len + to_add.len;
 
         const items = try allocator.alloc(MenuItem, new_len);
-        const labels = try allocator.alloc([]const u8, new_len);
+        const docs = try allocator.alloc(search.Doc, new_len);
         const scores = try allocator.alloc(i32, new_len);
         @memset(scores, 0);
 
@@ -362,7 +388,7 @@ pub const Model = struct {
             var item = item_in;
             item.index = idx;
             items[idx] = item;
-            labels[idx] = foldLabel(&self.fold_arena, item.label);
+            docs[idx] = makeDoc(&self.fold_arena, item);
         }
 
         for (old_items, 0..) |item_in, offset| {
@@ -370,18 +396,19 @@ pub const Model = struct {
             var item = item_in;
             item.index = idx;
             items[idx] = item;
-            labels[idx] = old_labels[offset];
+            docs[idx] = old_docs[offset];
         }
 
         self.items = items;
-        self.labels = labels;
+        self.docs = docs;
         self.scores = scores;
 
         allocator.free(old_items);
-        allocator.free(old_labels);
+        allocator.free(old_docs);
         allocator.free(old_scores);
 
         try self.reserveRows(allocator, new_len);
+        self.reindex();
     }
 
     pub fn setItems(self: *Model, allocator: std.mem.Allocator, new_items: []const MenuItem) !void {
@@ -394,7 +421,7 @@ pub const Model = struct {
         const new_len = to_set.len;
 
         self.items = try allocator.realloc(self.items, new_len);
-        self.labels = try allocator.realloc(self.labels, new_len);
+        self.docs = try allocator.realloc(self.docs, new_len);
         self.scores = try allocator.realloc(self.scores, new_len);
         @memset(self.scores, 0);
 
@@ -404,13 +431,14 @@ pub const Model = struct {
             var item = item_in;
             item.index = idx;
             self.items[idx] = item;
-            self.labels[idx] = foldLabel(&self.fold_arena, item.label);
+            self.docs[idx] = makeDoc(&self.fold_arena, item);
         }
 
         self.matches.clearRetainingCapacity();
         self.regular.clearRetainingCapacity();
         self.rows.clearRetainingCapacity();
         try self.reserveRows(allocator, new_len);
+        self.reindex();
         self.match_count = 0;
         self.selected = -1;
     }
@@ -652,4 +680,53 @@ test "clamped moves stop at the ends and count as user moves" {
     model.applyFilter("zzzz", .{ .levenshtein_fallback = false });
     model.selectLast();
     try std.testing.expectEqual(@as(isize, -1), model.selected);
+}
+
+fn richItem(label: [:0]const u8, subtitle: ?[:0]const u8, keywords: ?[]const u8) MenuItem {
+    return .{ .label = label, .index = 0, .icon = null, .subtitle = subtitle, .keywords = keywords };
+}
+
+test "search covers subtitle and keywords with the label ranked first" {
+    const allocator = std.testing.allocator;
+    var model = try Model.init(allocator, try testItems(allocator, &.{}), false);
+    defer model.deinit(allocator);
+    try model.setItems(allocator, &.{
+        richItem("Inbox - Gmail", "Safari", null),
+        richItem("Notes", null, "scratch safari"),
+        richItem("Safari", null, null),
+        richItem("Calendar", null, null),
+    });
+    model.applyFilter("safari", .{ .levenshtein_fallback = false });
+    try std.testing.expectEqual(@as(usize, 3), model.rowCount());
+    try std.testing.expectEqualStrings("Safari", model.rowItem(0).label);
+    try std.testing.expectEqualStrings("Inbox - Gmail", model.rowItem(1).label);
+    try std.testing.expectEqualStrings("Notes", model.rowItem(2).label);
+
+    model.applyFilter("scratch", .{});
+    try std.testing.expectEqualStrings("Notes", model.selectedItem().?.label);
+}
+
+test "accented subtitles and keywords are folded" {
+    const allocator = std.testing.allocator;
+    var model = try Model.init(allocator, try testItems(allocator, &.{}), false);
+    defer model.deinit(allocator);
+    try model.setItems(allocator, &.{richItem("Mail", "Café Nero", "Zürich")});
+    try model.prependItems(allocator, &.{richItem("Other", null, "Crème")});
+    model.applyFilter("cafe", .{});
+    try std.testing.expectEqualStrings("Mail", model.selectedItem().?.label);
+    model.applyFilter("zurich", .{});
+    try std.testing.expectEqualStrings("Mail", model.selectedItem().?.label);
+    model.applyFilter("creme", .{});
+    try std.testing.expectEqualStrings("Other", model.selectedItem().?.label);
+}
+
+test "template items are never matched as regular items" {
+    const allocator = std.testing.allocator;
+    var model = try Model.init(allocator, try testItems(allocator, &.{ "Search Google", "Google" }), false);
+    defer model.deinit(allocator);
+    try model.appendItems(allocator, &.{.{ .label = "Google {q}", .index = 0, .icon = null, .template = .prefix, .template_prefix = "g " }});
+    model.applyFilter("google", .{});
+    try std.testing.expectEqual(@as(usize, 2), model.rowCount());
+    model.applyFilter("", .{});
+    try std.testing.expectEqual(@as(usize, 2), model.rowCount());
 }

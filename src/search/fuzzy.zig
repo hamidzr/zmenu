@@ -32,6 +32,28 @@ pub fn fuzzyTokenSearch(
     std.mem.sort(types.Match, matches.items, {}, scoreDescIndexAsc);
 }
 
+/// `fuzzyTokenSearch` over items searched by label, subtitle and keywords.
+/// `candidates` picks the docs to search; match indexes are positions in it.
+pub fn fuzzyDocSearch(
+    docs: []const types.Doc,
+    candidates: []const usize,
+    query: []const u8,
+    matches: *std.ArrayList(types.Match),
+) void {
+    matches.clearRetainingCapacity();
+    outer: for (candidates, 0..) |doc_index, position| {
+        const doc = docs[doc_index];
+        var total: i32 = 0;
+        var tokens = std.mem.splitScalar(u8, query, ' ');
+        while (tokens.next()) |token| {
+            if (token.len == 0) continue;
+            total +|= rank.docTokenScore(token, doc.label, doc.subtitle, doc.keywords) orelse continue :outer;
+        }
+        matches.appendAssumeCapacity(.{ .index = position, .score = total });
+    }
+    std.mem.sort(types.Match, matches.items, {}, scoreDescIndexAsc);
+}
+
 pub fn fuzzySearchBrute(
     labels: []const []const u8,
     query: []const u8,
