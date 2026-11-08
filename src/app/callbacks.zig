@@ -144,7 +144,7 @@ pub fn onRowClick(target: objc.c.id, sel: objc.c.SEL, sender: objc.c.id) callcon
 
     const app_state = state.g_state orelse return;
     const row = app_state.table_view.msgSend(c_long, "clickedRow", .{});
-    if (row < 0 or @as(usize, @intCast(row)) >= app_state.model.filtered.items.len) return;
+    if (row < 0 or @as(usize, @intCast(row)) >= app_state.model.rowCount()) return;
     app_state.model.selected = row;
     logic.acceptSelection(app_state);
 }
@@ -201,7 +201,7 @@ pub fn numberOfRowsInTableView(target: objc.c.id, sel: objc.c.SEL, table: objc.c
     _ = table;
 
     const app_state = state.g_state orelse return 0;
-    return @intCast(app_state.model.filtered.items.len);
+    return @intCast(app_state.model.rowCount());
 }
 
 pub fn tableViewViewForTableColumn(
@@ -219,7 +219,7 @@ pub fn tableViewViewForTableColumn(
     if (column == null or row < 0) return null;
 
     const row_index: usize = @intCast(row);
-    if (row_index >= app_state.model.filtered.items.len) return null;
+    if (row_index >= app_state.model.rowCount()) return null;
 
     const column_obj = objc.Object.fromId(column);
     const table_view = app_state.table_view;
@@ -238,7 +238,7 @@ pub fn tableViewViewForTableColumn(
         const selected = app_state.model.selectedRow() == row_index;
         const hint_color = if (selected) app_state.palette.selected_secondary else app_state.palette.secondary;
         const query = logic.currentQuery(app_state);
-        if (app_state.config.numericSelectionEnabled(app_state.model.filtered.items.len, query) and row_index < state.digit_labels.len) {
+        if (app_state.config.numericSelectionEnabled(app_state.model.rowCount(), query) and row_index < state.digit_labels.len) {
             views.setCellText(cell, state.digit_labels[row_index], hint_color);
         } else {
             views.setCellText(cell, "", hint_color);
@@ -248,8 +248,7 @@ pub fn tableViewViewForTableColumn(
 
     if (app_state.config.show_icons and columnIsIcon(column_obj)) {
         const cell = views.iconCell(table_view, row_height, column_width, "zmenuIconCell");
-        const item_index = app_state.model.filtered.items[row_index];
-        views.setCellImage(cell, iconImage(app_state.model.items[item_index].icon, views.iconSide(row_height, column_width)));
+        views.setCellImage(cell, iconImage(app_state.model.rowItem(row_index).icon, views.iconSide(row_height, column_width)));
         return cell.value;
     }
 
@@ -322,7 +321,7 @@ pub fn tableViewSelectionDidChange(target: objc.c.id, sel: objc.c.SEL, notificat
 
 /// mirror a table row into the model, clearing it when out of range
 fn syncSelectedRow(app_state: *state.AppState, row: c_long) void {
-    const in_range = row >= 0 and @as(usize, @intCast(row)) < app_state.model.filtered.items.len;
+    const in_range = row >= 0 and @as(usize, @intCast(row)) < app_state.model.rowCount();
     app_state.model.selected = if (in_range) @intCast(row) else -1;
 }
 
@@ -574,11 +573,11 @@ fn handleNumericShortcut(app_state: *state.AppState, ch: u8) bool {
 }
 
 fn handleNumericShortcutWithQuery(app_state: *state.AppState, ch: u8, query_for_mode: []const u8) bool {
-    if (!app_state.config.numericSelectionEnabled(app_state.model.filtered.items.len, query_for_mode)) return false;
+    if (!app_state.config.numericSelectionEnabled(app_state.model.rowCount(), query_for_mode)) return false;
     if (ch < '1' or ch > '9') return false;
 
     const index: usize = @intCast(ch - '1');
-    if (index < app_state.model.filtered.items.len) {
+    if (index < app_state.model.rowCount()) {
         app_state.model.selected = @intCast(index);
         logic.updateSelection(app_state);
         logic.acceptSelection(app_state);

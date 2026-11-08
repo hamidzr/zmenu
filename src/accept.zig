@@ -9,14 +9,14 @@ pub const Decision = union(enum) {
 };
 
 pub fn decide(model: *menu.Model, ipc_only: bool, accept_custom_selection: bool, query: []const u8) Decision {
-    if (model.filtered.items.len == 0) {
+    if (model.rows.items.len == 0) {
         // ipc-only has no custom selection: there is no payload to print
         if (ipc_only or !accept_custom_selection) return .ignore;
         return .{ .output = .{ .label = query, .output = query } };
     }
 
     // no selection falls back to the first match
-    const item = model.selectedItem() orelse model.items[model.filtered.items[0]];
+    const item = model.selectedItem() orelse model.items[model.rows.items[0].item];
     const output = if (ipc_only) item.ipc_payload orelse item.label else item.label;
     return .{ .output = .{ .label = item.label, .output = output } };
 }
@@ -62,7 +62,7 @@ test "no matches keeps the menu open in ipc-only, else custom or ignore" {
     var model = try testModel(allocator);
     defer model.deinit(allocator);
     model.applyFilter("zzz", .{ .levenshtein_fallback = false });
-    try std.testing.expectEqual(@as(usize, 0), model.filtered.items.len);
+    try std.testing.expectEqual(@as(usize, 0), model.rows.items.len);
 
     try std.testing.expect(decide(&model, true, true, "zzz") == .ignore);
     try std.testing.expect(decide(&model, false, false, "zzz") == .ignore);

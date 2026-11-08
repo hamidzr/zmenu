@@ -74,7 +74,7 @@ pub fn restyleSelection(app_state: *state.AppState) void {
 }
 
 fn restyleRow(app_state: *state.AppState, row: usize) void {
-    if (row >= app_state.model.filtered.items.len) return;
+    if (row >= app_state.model.rowCount()) return;
     const selected = app_state.model.selectedRow() == row;
     const palette = app_state.palette;
     if (cellAt(app_state, "index", row)) |cell| {
@@ -102,7 +102,7 @@ fn cellAt(app_state: *state.AppState, identifier: [*:0]const u8, row: usize) ?ob
 pub fn configureItemCell(app_state: *state.AppState, cell: objc.Object, row: usize) void {
     const label_view = cell.msgSend(objc.Object, "textField", .{});
     if (label_view.value == null) return;
-    const label = app_state.model.items[app_state.model.filtered.items[row]].label;
+    const label = app_state.model.rowItem(row).label;
     const selected = app_state.model.selectedRow() == row;
     const palette = app_state.palette;
     const color = if (selected) palette.selected_text else palette.text;
@@ -311,7 +311,7 @@ pub fn refreshHoverAtWindowPoint(app_state: *state.AppState, window_point: NSPoi
 }
 
 fn redrawRow(app_state: *state.AppState, row: usize) void {
-    if (row >= app_state.model.filtered.items.len) return;
+    if (row >= app_state.model.rowCount()) return;
     const row_view = app_state.table_view.msgSend(objc.Object, "rowViewAtRow:makeIfNecessary:", .{
         @as(c_long, @intCast(row)),
         false,

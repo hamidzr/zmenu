@@ -71,7 +71,7 @@ fn refreshView(app_state: *state.AppState, query: []const u8) void {
     app_state.display_state = display.compute(
         app_state.loaded,
         app_state.model.items.len,
-        app_state.model.filtered.items.len,
+        app_state.model.rowCount(),
         query,
     );
     fitWindow(app_state);
@@ -87,7 +87,7 @@ fn refreshView(app_state: *state.AppState, query: []const u8) void {
 /// search field does not move while typing. Subviews follow by autoresizing.
 pub fn fitWindow(app_state: *state.AppState) void {
     // a message line takes the place of the first row
-    const rows = app_state.metrics.rows(app_state.model.filtered.items.len);
+    const rows = app_state.metrics.rows(app_state.model.rowCount());
     const height = app_state.metrics.windowHeight(rows);
     const frame = app_state.window.msgSend(objc_helpers.NSRect, "frame", .{});
     if (@abs(frame.size.height - height) < 0.5) return;
@@ -109,7 +109,7 @@ fn updateMessage(app_state: *state.AppState) void {
 }
 
 pub fn maybeAutoAccept(app_state: *state.AppState, trigger: AutoAcceptTrigger) void {
-    const filtered_len = app_state.model.filtered.items.len;
+    const filtered_len = app_state.model.rowCount();
     if (!app_state.config.auto_accept or !app_state.stream_closed or filtered_len != 1) {
         app_state.pending_stream_close_auto_accept = false;
         return;

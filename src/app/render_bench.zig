@@ -21,12 +21,12 @@ pub fn onRenderBench(target: objc.c.id, sel: objc.c.SEL, timer: objc.c.id) callc
     _ = timer;
 
     const app_state = state.g_state orelse return;
-    if (app_state.model.filtered.items.len == 0) {
+    if (app_state.model.rowCount() == 0) {
         io_compat.stderrPrint("render-bench: no items\n", .{}) catch {};
         logic.quit(app_state, 1);
     }
 
-    const label = app_state.model.items[app_state.model.filtered.items[0]].label;
+    const label = app_state.model.rowItem(0).label;
     const query_len = @min(label.len, render_bench_max_samples);
 
     var w: usize = 0;
@@ -57,7 +57,7 @@ pub fn onRenderBench(target: objc.c.id, sel: objc.c.SEL, timer: objc.c.id) callc
 
     const keystroke = summarize(keystroke_samples[0..sample_count]);
     const paint = summarize(paint_samples[0..sample_count]);
-    const matched = app_state.model.filtered.items.len;
+    const matched = app_state.model.rowCount();
     const selected = app_state.model.selectedItem() != null;
 
     io_compat.stderrPrint(

@@ -32,6 +32,12 @@ pub const MenuItem = struct {
     template_prefix: []const u8 = "",
 };
 
+/// One visible line of the list: the item behind it. Rows, not items, are what
+/// the list shows, selects, numbers and accepts.
+pub const Row = struct {
+    item: usize,
+};
+
 /// what the user had selected before an items update, to find it again
 const Anchor = struct {
     key: []u8,
@@ -123,7 +129,10 @@ pub const Model = struct {
     /// owns folded copies of labels that contain accents
     fold_arena: std.heap.ArenaAllocator,
     matches: std.ArrayList(search.Match),
-    filtered: std.ArrayList(usize),
+    /// items matching the query, best first
+    regular: std.ArrayList(usize),
+    /// what the list shows, top to bottom
+    rows: std.ArrayList(Row),
     scores: []i32,
     match_count: usize,
     selected: isize,
@@ -163,8 +172,10 @@ pub const Model = struct {
         var matches = std.ArrayList(search.Match).empty;
         try matches.ensureTotalCapacity(allocator, working.len);
 
-        var filtered = std.ArrayList(usize).empty;
-        try filtered.ensureTotalCapacity(allocator, working.len);
+        var regular = std.ArrayList(usize).empty;
+        try regular.ensureTotalCapacity(allocator, working.len);
+        var rows = std.ArrayList(Row).empty;
+        try rows.ensureTotalCapacity(allocator, working.len);
 
         const scores = try allocator.alloc(i32, working.len);
         @memset(scores, 0);
@@ -174,7 +185,8 @@ pub const Model = struct {
             .labels = labels,
             .fold_arena = fold_arena,
             .matches = matches,
-            .filtered = filtered,
+            .regular = regular,
+            .rows = rows,
             .scores = scores,
             .match_count = 0,
             .selected = -1,
@@ -188,7 +200,8 @@ pub const Model = struct {
         self.clearAnchor();
         self.fold_arena.deinit();
         self.matches.deinit(allocator);
-        self.filtered.deinit(allocator);
+        self.regular.deinit(allocator);
+        self.rows.deinit(allocator);
         self.seen.deinit(allocator);
         allocator.free(self.items);
         allocator.free(self.labels);
@@ -226,7 +239,7 @@ pub const Model = struct {
     fn captureAnchor(self: *Model) void {
         if (self.anchor != null or !self.moved) return;
         const row = self.selectedRow() orelse return;
-        const item = self.items[self.filtered.items[row]];
+        const item = self.items[self.rows.items[row].item];
         const key = self.allocator.dupe(u8, item.id orelse item.label) catch return;
         self.anchor = .{ .key = key, .by_id = item.id != null, .row = row };
     }
@@ -240,13 +253,29 @@ pub const Model = struct {
         @memset(self.scores, 0);
         var fold_buf: [512]u8 = undefined;
         const folded_query = search.fold.foldBuf(&fold_buf, query);
-        search.filterIndices(self.labels, folded_query, opts, &self.matches, &self.filtered);
+        search.filterIndices(self.labels, folded_query, opts, &self.matches, &self.regular);
         self.match_count = self.matches.items.len;
         for (self.matches.items) |match| {
             if (match.index < self.scores.len) {
                 self.scores[match.index] = match.score;
             }
         }
+        self.rows.clearRetainingCapacity();
+        for (self.regular.items) |item_index| self.rows.appendAssumeCapacity(.{ .item = item_index });
+    }
+
+    fn reserveRows(self: *Model, allocator: std.mem.Allocator, count: usize) !void {
+        try self.matches.ensureTotalCapacity(allocator, count);
+        try self.regular.ensureTotalCapacity(allocator, count);
+        try self.rows.ensureTotalCapacity(allocator, count);
+    }
+
+    pub fn rowCount(self: *const Model) usize {
+        return self.rows.items.len;
+    }
+
+    pub fn rowItem(self: *const Model, row: usize) *const MenuItem {
+        return &self.items[self.rows.items[row].item];
     }
 
     /// query changed: select the top row and forget any manual move
@@ -254,7 +283,7 @@ pub const Model = struct {
         self.refilter(query, opts);
         self.moved = false;
         self.clearAnchor();
-        self.selected = if (self.filtered.items.len == 0) -1 else 0;
+        self.selected = if (self.rows.items.len == 0) -1 else 0;
     }
 
     /// items changed under an unchanged query: if the user moved the
@@ -263,15 +292,15 @@ pub const Model = struct {
     pub fn applyFilterKeepSelection(self: *Model, query: []const u8, opts: search.Options) void {
         self.refilter(query, opts);
         defer self.clearAnchor();
-        const count = self.filtered.items.len;
+        const count = self.rows.items.len;
         if (count == 0) {
             self.selected = -1;
             return;
         }
         self.selected = 0;
         const anchor = self.anchor orelse return;
-        for (self.filtered.items, 0..) |item_index, row| {
-            if (anchorMatches(anchor, self.items[item_index])) {
+        for (self.rows.items, 0..) |row_data, row| {
+            if (anchorMatches(anchor, self.items[row_data.item])) {
                 self.selected = @intCast(row);
                 return;
             }
@@ -305,8 +334,7 @@ pub const Model = struct {
             self.scores[idx] = 0;
         }
 
-        try self.matches.ensureTotalCapacity(allocator, new_len);
-        try self.filtered.ensureTotalCapacity(allocator, new_len);
+        try self.reserveRows(allocator, new_len);
     }
 
     pub fn prependItems(self: *Model, allocator: std.mem.Allocator, new_items: []const MenuItem) !void {
@@ -353,8 +381,7 @@ pub const Model = struct {
         allocator.free(old_labels);
         allocator.free(old_scores);
 
-        try self.matches.ensureTotalCapacity(allocator, new_len);
-        try self.filtered.ensureTotalCapacity(allocator, new_len);
+        try self.reserveRows(allocator, new_len);
     }
 
     pub fn setItems(self: *Model, allocator: std.mem.Allocator, new_items: []const MenuItem) !void {
@@ -381,33 +408,33 @@ pub const Model = struct {
         }
 
         self.matches.clearRetainingCapacity();
-        self.filtered.clearRetainingCapacity();
-        try self.matches.ensureTotalCapacity(allocator, new_len);
-        try self.filtered.ensureTotalCapacity(allocator, new_len);
+        self.regular.clearRetainingCapacity();
+        self.rows.clearRetainingCapacity();
+        try self.reserveRows(allocator, new_len);
         self.match_count = 0;
         self.selected = -1;
     }
 
     pub fn moveSelection(self: *Model, delta: isize) void {
         self.moved = true;
-        if (self.filtered.items.len == 0) {
+        if (self.rows.items.len == 0) {
             self.selected = -1;
             return;
         }
 
-        const count: isize = @intCast(self.filtered.items.len);
+        const count: isize = @intCast(self.rows.items.len);
         self.selected = @mod(@max(self.selected, 0) + delta, count);
     }
 
     /// move without wrapping, clamped to the first and last row
     pub fn moveSelectionClamped(self: *Model, delta: isize) void {
         self.moved = true;
-        if (self.filtered.items.len == 0) {
+        if (self.rows.items.len == 0) {
             self.selected = -1;
             return;
         }
 
-        const last: isize = @intCast(self.filtered.items.len - 1);
+        const last: isize = @intCast(self.rows.items.len - 1);
         self.selected = std.math.clamp(@max(self.selected, 0) +| delta, 0, last);
     }
 
@@ -422,14 +449,13 @@ pub const Model = struct {
     pub fn selectedRow(self: *Model) ?usize {
         if (self.selected < 0) return null;
         const row: usize = @intCast(self.selected);
-        if (row >= self.filtered.items.len) return null;
+        if (row >= self.rows.items.len) return null;
         return row;
     }
 
     pub fn selectedItem(self: *Model) ?MenuItem {
         const row = self.selectedRow() orelse return null;
-        const item_index = self.filtered.items[row];
-        return self.items[item_index];
+        return self.items[self.rows.items[row].item];
     }
 };
 
@@ -578,7 +604,7 @@ test "accent-insensitive search in both directions" {
     defer model.deinit(allocator);
 
     model.applyFilter("cafe", .{});
-    try std.testing.expectEqual(@as(usize, 1), model.filtered.items.len);
+    try std.testing.expectEqual(@as(usize, 1), model.rows.items.len);
     try std.testing.expectEqualStrings("Café Nero", model.selectedItem().?.label);
 
     model.applyFilter("eclair", .{});
