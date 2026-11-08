@@ -1,6 +1,11 @@
 const std = @import("std");
 const io_compat = @import("io_compat.zig");
+const ipc = @import("ipc.zig");
 const search = @import("search.zig");
+
+/// Template items are not matched against the query: they appear on a
+/// condition (see `rows`). Regular items have `.none`.
+pub const Template = enum { none, calc, prefix, fallback };
 
 pub const MenuItem = struct {
     label: [:0]const u8,
@@ -9,6 +14,22 @@ pub const MenuItem = struct {
     ipc_payload: ?[]const u8 = null,
     /// client-supplied IPC id; stdin items have none
     id: ?[]const u8 = null,
+    /// dim text after the label; searched and highlighted
+    subtitle: ?[:0]const u8 = null,
+    /// short right-aligned dim text; not searched
+    detail: ?[:0]const u8 = null,
+    /// searched, never shown
+    keywords: ?[]const u8 = null,
+    /// category that scopes select on
+    kind: ?[]const u8 = null,
+    /// plain-Enter action label, alternate actions and confirmation: kept for
+    /// the action UI, not acted on yet
+    action: ?[]const u8 = null,
+    actions: ?[]const ipc.Action = null,
+    confirm: ?std.json.Value = null,
+    /// condition of a template item; `template_prefix` is the trigger of `.prefix`
+    template: Template = .none,
+    template_prefix: []const u8 = "",
 };
 
 /// what the user had selected before an items update, to find it again

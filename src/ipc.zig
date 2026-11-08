@@ -3,16 +3,65 @@ const builtin = @import("builtin");
 const io_compat = @import("io_compat.zig");
 const test_env = @import("test_env.zig");
 
+/// A search scope: "<prefix> <text>" narrows the list to items of `kind`
+pub const Scope = struct {
+    prefix: []const u8,
+    kind: []const u8,
+    label: []const u8 = "",
+};
+
+/// an alternate action of an item; parsed and kept, not acted on yet
+pub const Action = struct {
+    mods: []const u8 = "",
+    label: []const u8 = "",
+    /// a prompt string, or `true` for the default prompt
+    confirm: ?std.json.Value = null,
+};
+
+/// One item as clients send it. Only the fields zmenu reads are typed; the
+/// stored payload (what accepting prints) keeps every field, typed or not.
 pub const Item = struct {
     id: []const u8 = "",
     label: []const u8,
     icon: ?[]const u8 = null,
+    /// dim text after the label; searched and highlighted
+    subtitle: ?[]const u8 = null,
+    /// short right-aligned dim text; not searched
+    detail: ?[]const u8 = null,
+    /// searched, never shown
+    keywords: ?[]const u8 = null,
+    /// category, matched by scopes
+    kind: ?[]const u8 = null,
+    /// label of the plain-Enter action
+    action: ?[]const u8 = null,
+    actions: ?[]const Action = null,
+    /// a prompt string, or `true`
+    confirm: ?std.json.Value = null,
+    /// template item shown while the query starts with this prefix
+    prefix: ?[]const u8 = null,
+    /// template item shown when nothing else matches
+    fallback: ?bool = null,
+    /// template item shown when the query is an arithmetic expression
+    calc: ?bool = null,
 };
 
+/// What zmenuctl sends. Absent optionals are left out of the JSON.
 pub const Message = struct {
     v: u32 = 2,
     cmd: []const u8,
-    items: ?[]Item = null,
+    items: ?[]const Item = null,
+    loading: ?bool = null,
+    scopes: ?[]const Scope = null,
+};
+
+/// What zmenu reads. Items stay raw JSON values so unknown fields survive into
+/// the payload printed on accept; each is parsed into an `Item` separately.
+pub const Incoming = struct {
+    v: u32 = 2,
+    cmd: []const u8,
+    items: ?[]const std.json.Value = null,
+    loading: ?bool = null,
+    scopes: ?[]const Scope = null,
 };
 
 pub const Command = enum { set, append, prepend };

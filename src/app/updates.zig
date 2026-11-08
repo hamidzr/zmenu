@@ -205,26 +205,54 @@ fn flushPendingStdinLine(queue: *UpdateQueue, pending: *std.ArrayList(u8)) void 
     queue.pushOwned(.append, .stdin, line, 0);
 }
 
+/// The first of calc, prefix, fallback that an item sets wins.
+fn templateOf(item: ipc.Item) menu.Template {
+    if (item.calc == true) return .calc;
+    if (item.prefix) |prefix| {
+        if (prefix.len > 0) return .prefix;
+    }
+    if (item.fallback == true) return .fallback;
+    return .none;
+}
+
+fn dupeOptionalZ(allocator: std.mem.Allocator, text: ?[]const u8) !?[:0]const u8 {
+    const value = text orelse return null;
+    if (value.len == 0) return null;
+    return try allocator.dupeSentinel(u8, value, 0);
+}
+
+/// Builds a menu item from one item's JSON. Everything the item keeps is
+/// allocated from `allocator` (the GUI's arena); the payload is copied whole.
 pub fn menuItemFromIpc(allocator: std.mem.Allocator, payload: []const u8) ?menu.MenuItem {
-    const parsed = std.json.parseFromSlice(ipc.Item, allocator, payload, .{
+    return buildMenuItem(allocator, payload) catch null;
+}
+
+fn buildMenuItem(allocator: std.mem.Allocator, payload: []const u8) !menu.MenuItem {
+    // alloc_always: strings must not point into `payload`, which the caller frees
+    const item = try std.json.parseFromSliceLeaky(ipc.Item, allocator, payload, .{
         .ignore_unknown_fields = true,
-    }) catch return null;
-    defer parsed.deinit();
+        .allocate = .alloc_always,
+    });
 
-    const item = parsed.value;
     const label = std.mem.trim(u8, item.label, " \t\r\n");
-    if (label.len == 0) return null;
+    if (label.len == 0) return error.EmptyLabel;
 
-    const label_z = allocator.dupeSentinel(u8, label, 0) catch return null;
-    errdefer allocator.free(label_z);
-    const icon = if (item.icon) |path|
-        allocator.dupeSentinel(u8, path, 0) catch return null
-    else
-        null;
-    const payload_copy = allocator.dupe(u8, payload) catch return null;
-    const id = if (item.id.len > 0) allocator.dupe(u8, item.id) catch return null else null;
-
-    return .{ .label = label_z, .index = 0, .icon = icon, .ipc_payload = payload_copy, .id = id };
+    return .{
+        .label = try allocator.dupeSentinel(u8, label, 0),
+        .index = 0,
+        .icon = if (item.icon) |path| try allocator.dupeSentinel(u8, path, 0) else null,
+        .ipc_payload = try allocator.dupe(u8, payload),
+        .id = if (item.id.len > 0) item.id else null,
+        .subtitle = try dupeOptionalZ(allocator, item.subtitle),
+        .detail = try dupeOptionalZ(allocator, item.detail),
+        .keywords = item.keywords,
+        .kind = item.kind,
+        .action = item.action,
+        .actions = item.actions,
+        .confirm = item.confirm,
+        .template = templateOf(item),
+        .template_prefix = if (item.prefix) |prefix| prefix else "",
+    };
 }
 
 fn startIpcServer(queue: *UpdateQueue, menu_id: []const u8) ?[]const u8 {
@@ -315,7 +343,7 @@ fn readLineAlloc(reader: *std.Io.Reader, allocator: std.mem.Allocator, max_len: 
 }
 
 pub fn handleIpcPayload(queue: *UpdateQueue, payload: []const u8) void {
-    const parsed = std.json.parseFromSlice(ipc.Message, std.heap.c_allocator, payload, .{ .ignore_unknown_fields = true }) catch return;
+    const parsed = std.json.parseFromSlice(ipc.Incoming, std.heap.c_allocator, payload, .{ .ignore_unknown_fields = true }) catch return;
     defer parsed.deinit();
 
     const kind: UpdateKind = switch (ipc.parseCommand(parsed.value.cmd) orelse return) {
@@ -328,13 +356,13 @@ pub fn handleIpcPayload(queue: *UpdateQueue, payload: []const u8) void {
     const batch_id = queue.nextBatchId();
     var batch = std.ArrayList(ItemUpdate).empty;
     defer batch.deinit(queue.allocator);
-    for (items) |item| {
-        const label = std.mem.trim(u8, item.label, " \t\r\n");
-        if (label.len == 0) continue;
+    for (items) |value| {
+        if (!isUsableItem(value)) continue;
 
+        // re-serialized from the parsed value: whitespace is normalized, every field kept
         var json_out: std.Io.Writer.Allocating = .init(queue.allocator);
         defer json_out.deinit();
-        std.json.Stringify.value(item, .{}, &json_out.writer) catch continue;
+        std.json.Stringify.value(value, .{}, &json_out.writer) catch continue;
         const payload_copy = queue.allocator.dupe(u8, json_out.written()) catch continue;
         batch.append(queue.allocator, .{ .kind = kind, .source = .ipc, .line = payload_copy, .batch = batch_id }) catch {
             queue.allocator.free(payload_copy);
@@ -345,6 +373,14 @@ pub fn handleIpcPayload(queue: *UpdateQueue, payload: []const u8) void {
         return;
     }
     queue.pushBatchOwned(batch.items);
+}
+
+/// an object whose label is a non-blank string
+fn isUsableItem(value: std.json.Value) bool {
+    if (value != .object) return false;
+    const label = value.object.get("label") orelse return false;
+    if (label != .string) return false;
+    return std.mem.trim(u8, label.string, " \t\r\n").len > 0;
 }
 
 test "oversized stdin line is skipped and later lines survive" {
@@ -411,6 +447,109 @@ test "menuItemFromIpc keeps the item id" {
     try std.testing.expectEqualStrings("w:1", with_id.id.?);
     const without = menuItemFromIpc(allocator, "{\"label\":\"Safari\"}").?;
     try std.testing.expect(without.id == null);
+}
+
+fn drainedLine(allocator: std.mem.Allocator, queue: *UpdateQueue, index: usize) ![]u8 {
+    const drained = queue.drain();
+    defer {
+        for (drained) |update| if (update.line) |line| queue.allocator.free(line);
+        queue.allocator.free(drained);
+    }
+    return allocator.dupe(u8, drained[index].line.?);
+}
+
+test "queued item payload keeps unknown fields and v3 fields" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+    var queue = UpdateQueue.init(std.testing.allocator);
+    defer {
+        queue.reset();
+        queue.items.deinit(std.testing.allocator);
+    }
+
+    handleIpcPayload(&queue,
+        \\{"v":3,"cmd":"set","items":[{"id":"w:1","label":"Inbox","subtitle":"Safari","detail":"S2",
+        \\"keywords":"mail","kind":"window","action":"Switch","actions":[{"mods":"cmd","label":"Reveal"}],
+        \\"confirm":true,"extra":{"pid":42,"tags":["a","b"]}}]}
+    );
+    const line = try drainedLine(allocator, &queue, 0);
+    const parsed = try std.json.parseFromSliceLeaky(std.json.Value, allocator, line, .{});
+    const obj = parsed.object;
+    try std.testing.expectEqualStrings("Safari", obj.get("subtitle").?.string);
+    try std.testing.expectEqualStrings("S2", obj.get("detail").?.string);
+    try std.testing.expectEqualStrings("Switch", obj.get("action").?.string);
+    try std.testing.expectEqualStrings("Reveal", obj.get("actions").?.array.items[0].object.get("label").?.string);
+    try std.testing.expect(obj.get("confirm").?.bool);
+    try std.testing.expectEqual(@as(i64, 42), obj.get("extra").?.object.get("pid").?.integer);
+    try std.testing.expectEqualStrings("b", obj.get("extra").?.object.get("tags").?.array.items[1].string);
+}
+
+test "items without a usable label are skipped" {
+    var queue = UpdateQueue.init(std.testing.allocator);
+    defer {
+        queue.reset();
+        queue.items.deinit(std.testing.allocator);
+    }
+    handleIpcPayload(&queue, "{\"cmd\":\"append\",\"items\":[{\"label\":\"  \"},{\"label\":5},\"x\",{\"id\":\"n\"},{\"label\":\"ok\"}]}");
+    const drained = queue.drain();
+    defer {
+        for (drained) |update| if (update.line) |line| queue.allocator.free(line);
+        queue.allocator.free(drained);
+    }
+    try std.testing.expectEqual(@as(usize, 1), drained.len);
+    try std.testing.expectEqualStrings("{\"label\":\"ok\"}", drained[0].line.?);
+}
+
+test "menuItemFromIpc reads the v3 fields" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    const payload_buf = try allocator.dupe(u8,
+        \\{"id":"t:9","label":" Inbox - Gmail ","icon":"/Applications/Safari.app","subtitle":"mail.google.com",
+        \\"detail":"Tab","keywords":"email","kind":"tab","action":"Switch","confirm":"Sure?",
+        \\"actions":[{"mods":"cmd","label":"Close","confirm":true}]}
+    );
+    const item = menuItemFromIpc(allocator, payload_buf).?;
+    // strings must not alias the caller's buffer
+    @memset(payload_buf, 'x');
+    try std.testing.expectEqualStrings("Inbox - Gmail", item.label);
+    try std.testing.expectEqualStrings("mail.google.com", item.subtitle.?);
+    try std.testing.expectEqualStrings("Tab", item.detail.?);
+    try std.testing.expectEqualStrings("email", item.keywords.?);
+    try std.testing.expectEqualStrings("tab", item.kind.?);
+    try std.testing.expectEqualStrings("Switch", item.action.?);
+    try std.testing.expectEqualStrings("Sure?", item.confirm.?.string);
+    try std.testing.expectEqualStrings("cmd", item.actions.?[0].mods);
+    try std.testing.expect(item.actions.?[0].confirm.?.bool);
+    try std.testing.expectEqual(menu.Template.none, item.template);
+
+    // v2 items have none of them
+    const plain = menuItemFromIpc(allocator, "{\"label\":\"Safari\"}").?;
+    try std.testing.expect(plain.subtitle == null and plain.detail == null and plain.kind == null);
+    // empty strings count as absent for the displayed fields
+    const empty = menuItemFromIpc(allocator, "{\"label\":\"A\",\"subtitle\":\"\",\"detail\":\"\"}").?;
+    try std.testing.expect(empty.subtitle == null and empty.detail == null);
+}
+
+test "menuItemFromIpc picks the template kind" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    const calc = menuItemFromIpc(allocator, "{\"label\":\"= {result}\",\"calc\":true}").?;
+    try std.testing.expectEqual(menu.Template.calc, calc.template);
+    const prefix = menuItemFromIpc(allocator, "{\"label\":\"Google {q}\",\"prefix\":\"g \"}").?;
+    try std.testing.expectEqual(menu.Template.prefix, prefix.template);
+    try std.testing.expectEqualStrings("g ", prefix.template_prefix);
+    const fallback = menuItemFromIpc(allocator, "{\"label\":\"Search {q}\",\"fallback\":true}").?;
+    try std.testing.expectEqual(menu.Template.fallback, fallback.template);
+    // false flags and an empty prefix are not templates; calc outranks the rest
+    const none = menuItemFromIpc(allocator, "{\"label\":\"x\",\"fallback\":false,\"calc\":false,\"prefix\":\"\"}").?;
+    try std.testing.expectEqual(menu.Template.none, none.template);
+    const both = menuItemFromIpc(allocator, "{\"label\":\"x\",\"calc\":true,\"fallback\":true,\"prefix\":\"g \"}").?;
+    try std.testing.expectEqual(menu.Template.calc, both.template);
 }
 
 const WakeCounter = struct {

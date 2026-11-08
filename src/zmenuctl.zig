@@ -81,7 +81,7 @@ pub fn main(init: std.process.Init) !void {
 
     var json_out: std.Io.Writer.Allocating = .init(allocator);
     defer json_out.deinit();
-    try std.json.Stringify.value(msg, .{}, &json_out.writer);
+    try std.json.Stringify.value(msg, .{ .emit_null_optional_fields = false }, &json_out.writer);
     const payload = json_out.written();
 
     const socket_path = socket_override orelse try ipc.socketPath(allocator, menu_id);
