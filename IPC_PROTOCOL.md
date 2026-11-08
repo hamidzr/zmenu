@@ -67,13 +67,13 @@ Matching: label, subtitle and keywords are searched. A label hit scores higher t
 Template items never take part in fuzzy matching and are not counted in the "n / total" counter. Their rows are normal rows for selection, the number shortcuts and keyboard navigation.
 
 - `"prefix": "g "`: hidden unless the query starts with the prefix (ASCII case-insensitive). Then it is pinned above the regular matches, with `{q}` in the label and subtitle replaced by the query after the prefix, leading spaces trimmed.
-- `"fallback": true`: shown only when the query is non-empty and no regular item matches. `{q}` is the full query. Fallbacks keep the supplied order.
+- `"fallback": true`: shown only when the query is non-empty, no regular item matches and no calc row is shown. `{q}` is the full query. Fallbacks keep the supplied order.
 - `"calc": true`: shown pinned at the very top when the whole query is an arithmetic expression with at least one binary operator (or parentheses around an operation) that evaluates to a finite number. `{q}` is the query and `{result}` the formatted result.
   - Grammar: numbers (digits, optional `.`, optional `_` digit separators), `+ - * / %` (modulo), `^` (power, right-associative, so `-2^2` is `-4`), unary minus and plus, parentheses, whitespace. Queries over 256 bytes are not evaluated.
   - Division by zero, NaN and infinity: not shown.
   - Result format: up to 12 significant digits, no trailing zeros, plain notation for `1e-6 <= |x| < 1e15`, otherwise exponent form such as `1.5e20`.
 
-Row order: calc rows, active prefix rows, regular matches, then fallbacks when there is no regular match. "No results" shows only when there are no rows at all.
+Row order: calc rows, active prefix rows, regular matches, then fallbacks when there is no regular match and no calc row (a shown calc result is the answer, so fallbacks hide). "No results" shows only when there are no rows at all.
 
 ### Scopes
 

@@ -362,7 +362,8 @@ pub const Model = struct {
     }
 
     /// Rows are [calc] [active prefix] [regular matches] [fallbacks when there
-    /// is no regular match]; the template rows are expanded for this query.
+    /// is no regular match and no calc row: the calc result is the answer]; the
+    /// template rows are expanded for this query.
     fn buildRows(self: *Model, query: []const u8) void {
         _ = self.row_arena.reset(.retain_capacity);
         self.rows.clearRetainingCapacity();
@@ -371,9 +372,12 @@ pub const Model = struct {
         // a scope hides the template rows
         const templated = self.active_scope == null;
         if (templated and has_query) self.appendCalcRows(query);
+        const shows_calc = self.rows.items.len > 0;
         if (templated) self.appendPrefixRows(query);
         for (self.regular.items) |item_index| self.rows.appendAssumeCapacity(.{ .item = item_index });
-        if (templated and has_query and self.regular.items.len == 0) self.appendTemplateRows(.fallback, query, query, null);
+        if (templated and has_query and !shows_calc and self.regular.items.len == 0) {
+            self.appendTemplateRows(.fallback, query, query, null);
+        }
     }
 
     fn appendCalcRows(self: *Model, query: []const u8) void {
@@ -921,8 +925,8 @@ test "calc row is pinned on top for an arithmetic query" {
     var model = try launcherModel(allocator);
     defer model.deinit(allocator);
     model.applyFilter("12*(3+4)", .{});
-    // nothing else matches, so the fallbacks follow the calc row
-    try expectRows(&model, &.{ "84", "Search the web for 12*(3+4)", "Look up 12*(3+4)" });
+    // the calc result is the answer: fallbacks stay hidden
+    try expectRows(&model, &.{"84"});
     try std.testing.expectEqualStrings("12*(3+4)", model.rows.items[0].expanded.?.arg);
     try std.testing.expectEqualStrings("84", model.rows.items[0].expanded.?.result.?);
     try std.testing.expectEqual(@as(isize, 0), model.selected);
@@ -1039,20 +1043,17 @@ test "selection by id survives updates under a calc query" {
     var model = try launcherModel(allocator);
     defer model.deinit(allocator);
     model.applyFilter("1+1", .{});
-    try expectRows(&model, &.{ "2", "Search the web for 1+1", "Look up 1+1" });
+    try expectRows(&model, &.{"2"});
+    try model.appendItems(allocator, &.{ idItem("late", "Late 1+1"), idItem("later", "Later 1+1") });
+    model.applyFilterKeepSelection("1+1", .{});
+    try expectRows(&model, &.{ "2", "Late 1+1", "Later 1+1" });
     model.moveSelection(2);
-    try std.testing.expectEqualStrings("web2", model.selectedItem().?.id.?);
+    try std.testing.expectEqualStrings("later", model.selectedItem().?.id.?);
 
-    // regular items arrive and a prefix row is added; the user stays on "web2"
-    try model.appendItems(allocator, &.{idItem("late", "Late 1+1")});
+    // the selected item is gone: the same row index is kept, clamped
+    try model.setItems(allocator, &.{ templateItem("calc", "{result}", .calc, ""), idItem("late", "Late 1+1") });
     model.applyFilterKeepSelection("1+1", .{});
-    try expectRows(&model, &.{ "2", "Late 1+1" });
-    // the selected template row is gone (fallbacks hide), so the same row index is kept, clamped
-    try std.testing.expectEqual(@as(isize, 1), model.selected);
-
-    try model.setItems(allocator, &.{ templateItem("calc", "{result}", .calc, ""), templateItem("web2", "Look up {q}", .fallback, "") });
-    model.applyFilterKeepSelection("1+1", .{});
-    try std.testing.expectEqualStrings("web2", model.selectedItem().?.id.?);
+    try std.testing.expectEqualStrings("late", model.selectedItem().?.id.?);
     try std.testing.expectEqual(@as(isize, 1), model.selected);
 }
 
