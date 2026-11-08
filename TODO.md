@@ -8,7 +8,7 @@
 - [ ] Parity: restrict cached initial query to safe highlightable chars (match Go alnum-only behavior)
 - [ ] Parity: align terminal SIGINT handling (Go returns NoError on SIGINT; Zig currently only handles Ctrl+C)
 - [ ] Parity: add reuse/embedding APIs (reset/hide/toggle/manual visibility) or document as unsupported
-- [ ] IPC prefix items + optional no-match fallback that return the typed query remainder, for combo-switcher web search prefixes (`g `, `yt `, `gmaps `). Design: combo-switcher `ROADMAP.md`
+- [x] IPC prefix items + optional no-match fallback that return the typed query remainder (protocol v3, see `IPC_PROTOCOL.md`)
 
 ## Milestone 1: ✅ COMPLETE - Search + Core Model Parity
 - [x] Read stdin items into memory
