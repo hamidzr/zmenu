@@ -7,6 +7,15 @@ pub const MenuItem = struct {
     index: usize,
     icon: ?[:0]const u8,
     ipc_payload: ?[]const u8 = null,
+    /// client-supplied IPC id; stdin items have none
+    id: ?[]const u8 = null,
+};
+
+/// what the user had selected before an items update, to find it again
+const Anchor = struct {
+    key: []u8,
+    by_id: bool,
+    row: usize,
 };
 
 pub const stdin_max_bytes: usize = 16 * 1024 * 1024;
@@ -91,6 +100,10 @@ pub const Model = struct {
     selected: isize,
     unique: bool,
     seen: std.StringHashMapUnmanaged(void),
+    allocator: std.mem.Allocator,
+    /// the user explicitly moved the selection since the last query change
+    moved: bool = false,
+    anchor: ?Anchor = null,
 
     pub fn init(allocator: std.mem.Allocator, items: []MenuItem, unique: bool) !Model {
         var seen: std.StringHashMapUnmanaged(void) = .{};
@@ -135,10 +148,12 @@ pub const Model = struct {
             .selected = -1,
             .unique = unique,
             .seen = seen,
+            .allocator = allocator,
         };
     }
 
     pub fn deinit(self: *Model, allocator: std.mem.Allocator) void {
+        self.clearAnchor();
         self.matches.deinit(allocator);
         self.filtered.deinit(allocator);
         self.seen.deinit(allocator);
@@ -169,7 +184,26 @@ pub const Model = struct {
         return .{ .items = buf[0..write_idx], .owned = buf };
     }
 
-    pub fn applyFilter(self: *Model, query: []const u8, opts: search.Options) void {
+    fn clearAnchor(self: *Model) void {
+        if (self.anchor) |anchor| self.allocator.free(anchor.key);
+        self.anchor = null;
+    }
+
+    /// remember the user-chosen item before an items update replaces the rows
+    fn captureAnchor(self: *Model) void {
+        if (self.anchor != null or !self.moved) return;
+        const row = self.selectedRow() orelse return;
+        const item = self.items[self.filtered.items[row]];
+        const key = self.allocator.dupe(u8, item.id orelse item.label) catch return;
+        self.anchor = .{ .key = key, .by_id = item.id != null, .row = row };
+    }
+
+    fn anchorMatches(anchor: Anchor, item: MenuItem) bool {
+        if (anchor.by_id) return if (item.id) |id| std.mem.eql(u8, id, anchor.key) else false;
+        return item.id == null and std.mem.eql(u8, item.label, anchor.key);
+    }
+
+    fn refilter(self: *Model, query: []const u8, opts: search.Options) void {
         @memset(self.scores, 0);
         search.filterIndices(self.labels, query, opts, &self.matches, &self.filtered);
         self.match_count = self.matches.items.len;
@@ -178,7 +212,36 @@ pub const Model = struct {
                 self.scores[match.index] = match.score;
             }
         }
+    }
+
+    /// query changed: select the top row and forget any manual move
+    pub fn applyFilter(self: *Model, query: []const u8, opts: search.Options) void {
+        self.refilter(query, opts);
+        self.moved = false;
+        self.clearAnchor();
         self.selected = if (self.filtered.items.len == 0) -1 else 0;
+    }
+
+    /// items changed under an unchanged query: if the user moved the
+    /// selection, keep it on the same item (id, else label), else on the same
+    /// row clamped; otherwise select the top row
+    pub fn applyFilterKeepSelection(self: *Model, query: []const u8, opts: search.Options) void {
+        self.refilter(query, opts);
+        defer self.clearAnchor();
+        const count = self.filtered.items.len;
+        if (count == 0) {
+            self.selected = -1;
+            return;
+        }
+        self.selected = 0;
+        const anchor = self.anchor orelse return;
+        for (self.filtered.items, 0..) |item_index, row| {
+            if (anchorMatches(anchor, self.items[item_index])) {
+                self.selected = @intCast(row);
+                return;
+            }
+        }
+        self.selected = @intCast(@min(anchor.row, count - 1));
     }
 
     pub fn appendItems(self: *Model, allocator: std.mem.Allocator, new_items: []const MenuItem) !void {
@@ -188,6 +251,7 @@ pub const Model = struct {
         defer if (filter_result.owned) |buf| allocator.free(buf);
         const to_add = filter_result.items;
         if (to_add.len == 0) return;
+        self.captureAnchor();
 
         const old_len = self.items.len;
         const new_len = old_len + to_add.len;
@@ -217,6 +281,7 @@ pub const Model = struct {
         defer if (filter_result.owned) |buf| allocator.free(buf);
         const to_add = filter_result.items;
         if (to_add.len == 0) return;
+        self.captureAnchor();
 
         const old_items = self.items;
         const old_labels = self.labels;
@@ -258,6 +323,7 @@ pub const Model = struct {
     }
 
     pub fn setItems(self: *Model, allocator: std.mem.Allocator, new_items: []const MenuItem) !void {
+        self.captureAnchor();
         if (self.unique) self.seen.clearRetainingCapacity();
 
         const filter_result = try self.filterUniqueIncoming(allocator, new_items);
@@ -286,6 +352,7 @@ pub const Model = struct {
     }
 
     pub fn moveSelection(self: *Model, delta: isize) void {
+        self.moved = true;
         if (self.filtered.items.len == 0) {
             self.selected = -1;
             return;
@@ -354,4 +421,96 @@ test "moveSelection wraps both ways" {
     model.selected = -1;
     model.moveSelection(1);
     try std.testing.expectEqual(@as(isize, 1), model.selected);
+}
+
+fn idItem(id: ?[:0]const u8, label: [:0]const u8) MenuItem {
+    return .{ .label = label, .index = 0, .icon = null, .id = id };
+}
+
+test "update keeps the user-chosen item selected by id" {
+    const allocator = std.testing.allocator;
+    var model = try Model.init(allocator, try testItems(allocator, &.{}), false);
+    defer model.deinit(allocator);
+    try model.setItems(allocator, &.{ idItem("x", "X"), idItem("y", "Y"), idItem("z", "Z") });
+    model.applyFilter("", .{});
+    model.moveSelection(1);
+    try std.testing.expectEqualStrings("y", model.selectedItem().?.id.?);
+
+    // reordered, and the label changed: the id wins
+    try model.setItems(allocator, &.{ idItem("z", "Z"), idItem("x", "X"), idItem("y", "Y2") });
+    model.applyFilterKeepSelection("", .{});
+    try std.testing.expectEqual(@as(isize, 2), model.selected);
+    try std.testing.expectEqualStrings("y", model.selectedItem().?.id.?);
+
+    // several updates before one filter keep the first anchor
+    try model.setItems(allocator, &.{ idItem("q", "Q"), idItem("y", "Y2") });
+    try model.appendItems(allocator, &.{idItem("r", "R")});
+    model.applyFilterKeepSelection("", .{});
+    try std.testing.expectEqualStrings("y", model.selectedItem().?.id.?);
+}
+
+test "update selects the top row when the user has not moved" {
+    const allocator = std.testing.allocator;
+    var model = try Model.init(allocator, try testItems(allocator, &.{ "a", "b" }), false);
+    defer model.deinit(allocator);
+    model.applyFilter("", .{});
+
+    try model.setItems(allocator, &.{ idItem("y", "Y"), idItem("x", "X") });
+    model.applyFilterKeepSelection("", .{});
+    try std.testing.expectEqual(@as(isize, 0), model.selected);
+}
+
+test "update falls back to the same row when the item is gone" {
+    const allocator = std.testing.allocator;
+    var model = try Model.init(allocator, try testItems(allocator, &.{ "a", "b", "c" }), false);
+    defer model.deinit(allocator);
+    model.applyFilter("", .{});
+    model.moveSelection(2);
+
+    try model.setItems(allocator, &.{ idItem("x", "X"), idItem("y", "Y"), idItem("z", "Z"), idItem("w", "W") });
+    model.applyFilterKeepSelection("", .{});
+    try std.testing.expectEqual(@as(isize, 2), model.selected);
+
+    // row index is clamped when the list shrinks
+    model.moveSelection(1);
+    try model.setItems(allocator, &.{ idItem("p", "P"), idItem("q", "Q") });
+    model.applyFilterKeepSelection("", .{});
+    try std.testing.expectEqual(@as(isize, 1), model.selected);
+
+    try model.setItems(allocator, &.{});
+    model.applyFilterKeepSelection("", .{});
+    try std.testing.expectEqual(@as(isize, -1), model.selected);
+}
+
+test "stdin items without ids reselect by label" {
+    const allocator = std.testing.allocator;
+    var model = try Model.init(allocator, try testItems(allocator, &.{ "a", "b", "c" }), false);
+    defer model.deinit(allocator);
+    model.applyFilter("", .{});
+    model.moveSelection(1);
+
+    try model.prependItems(allocator, &.{idItem(null, "new")});
+    try model.appendItems(allocator, &.{idItem(null, "last")});
+    model.applyFilterKeepSelection("", .{});
+    try std.testing.expectEqualStrings("b", model.selectedItem().?.label);
+}
+
+test "query change resets selection and the moved flag" {
+    const allocator = std.testing.allocator;
+    var model = try Model.init(allocator, try testItems(allocator, &.{ "ab", "ac", "ad" }), false);
+    defer model.deinit(allocator);
+    model.applyFilter("", .{});
+    model.moveSelection(2);
+    try std.testing.expect(model.moved);
+
+    // an update leaves a pending anchor that a query change must discard
+    try model.setItems(allocator, &.{ idItem(null, "ab"), idItem(null, "ac") });
+    model.applyFilter("a", .{});
+    try std.testing.expectEqual(@as(isize, 0), model.selected);
+    try std.testing.expect(!model.moved);
+    try std.testing.expect(model.anchor == null);
+
+    try model.setItems(allocator, &.{ idItem(null, "ab"), idItem(null, "ac") });
+    model.applyFilterKeepSelection("a", .{});
+    try std.testing.expectEqual(@as(isize, 0), model.selected);
 }

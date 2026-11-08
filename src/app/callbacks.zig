@@ -249,6 +249,8 @@ pub fn tableViewShouldSelectRow(
     _ = table;
 
     const app_state = state.g_state orelse return true;
+    // only user gestures (clicks) reach here; programmatic selection does not
+    app_state.model.moved = true;
     syncSelectedRow(app_state, row);
     return true;
 }
@@ -367,7 +369,7 @@ pub fn onUpdateTimer(target: objc.c.id, sel: objc.c.SEL, timer: objc.c.id) callc
         app_state.model.appendItems(app_state.allocator, append_items.items) catch return;
     }
     if (has_item_updates) {
-        logic.applyFilter(app_state, logic.currentQuery(app_state));
+        logic.applyItemUpdate(app_state);
     }
     if (saw_stream_closed) {
         app_state.stream_closed = true;

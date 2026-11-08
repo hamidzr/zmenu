@@ -194,8 +194,9 @@ pub fn menuItemFromIpc(allocator: std.mem.Allocator, payload: []const u8) ?menu.
     else
         null;
     const payload_copy = allocator.dupe(u8, payload) catch return null;
+    const id = if (item.id.len > 0) allocator.dupe(u8, item.id) catch return null else null;
 
-    return .{ .label = label_z, .index = 0, .icon = icon, .ipc_payload = payload_copy };
+    return .{ .label = label_z, .index = 0, .icon = icon, .ipc_payload = payload_copy, .id = id };
 }
 
 fn startIpcServer(queue: *UpdateQueue, menu_id: []const u8) ?[]const u8 {
@@ -371,4 +372,15 @@ test "empty IPC set enqueues a clear signal" {
     try std.testing.expectEqual(@as(usize, 1), drained.len);
     try std.testing.expectEqual(UpdateKind.set, drained[0].kind);
     try std.testing.expect(drained[0].line == null);
+}
+
+test "menuItemFromIpc keeps the item id" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    const with_id = menuItemFromIpc(allocator, "{\"id\":\"w:1\",\"label\":\"Safari\"}").?;
+    try std.testing.expectEqualStrings("w:1", with_id.id.?);
+    const without = menuItemFromIpc(allocator, "{\"label\":\"Safari\"}").?;
+    try std.testing.expect(without.id == null);
 }

@@ -52,6 +52,17 @@ pub fn updateMatchLabel(app_state: *state.AppState) void {
 
 pub fn applyFilter(app_state: *state.AppState, query: []const u8) void {
     app_state.model.applyFilter(query, app_state.config.search);
+    refreshView(app_state, query);
+}
+
+/// items changed under the current query: keep a user-moved selection
+pub fn applyItemUpdate(app_state: *state.AppState) void {
+    const query = currentQuery(app_state);
+    app_state.model.applyFilterKeepSelection(query, app_state.config.search);
+    refreshView(app_state, query);
+}
+
+fn refreshView(app_state: *state.AppState, query: []const u8) void {
     // rows move under a possibly stationary pointer, so drop the stale hover
     app_state.hovered_row = null;
     if (app_state.index_column) |index_column| {
