@@ -127,7 +127,7 @@ test "limit caps results" {
 }
 
 test "levenshtein fallback returns closest matches when enabled" {
-    const labels = [_][]const u8{ "ab", "abce", "wxyz" };
+    const labels = [_][]const u8{ "abc", "abcde", "wxyzq" };
     var matches = std.ArrayList(Match).empty;
     var out = std.ArrayList(usize).empty;
     defer matches.deinit(std.testing.allocator);
@@ -136,14 +136,14 @@ test "levenshtein fallback returns closest matches when enabled" {
     try matches.ensureTotalCapacity(std.testing.allocator, labels.len);
     try out.ensureTotalCapacity(std.testing.allocator, labels.len);
 
-    filterIndices(labels[0..], "abc", .{ .method = .direct }, &matches, &out);
+    filterIndices(labels[0..], "abcd", .{ .method = .direct }, &matches, &out);
     try std.testing.expectEqual(@as(usize, 2), out.items.len);
     try std.testing.expectEqual(@as(usize, 1), out.items[0]);
     try std.testing.expectEqual(@as(usize, 0), out.items[1]);
 }
 
 test "preserve order applies to fallback matches before result limit" {
-    const labels = [_][]const u8{ "ab", "abce", "wxyz" };
+    const labels = [_][]const u8{ "abc", "abcde", "wxyzq" };
     var matches = std.ArrayList(Match).empty;
     var out = std.ArrayList(usize).empty;
     defer matches.deinit(std.testing.allocator);
@@ -154,10 +154,10 @@ test "preserve order applies to fallback matches before result limit" {
 
     const methods = [_]SearchMethod{ .direct, .fuzzy, .fuzzy1, .fuzzy3, .default };
     for (methods) |method| {
-        filterIndices(labels[0..], "abc", .{ .method = method, .preserve_order = true }, &matches, &out);
+        filterIndices(labels[0..], "abcd", .{ .method = method, .preserve_order = true }, &matches, &out);
         try std.testing.expectEqualSlices(usize, &[_]usize{ 0, 1 }, out.items);
 
-        filterIndices(labels[0..], "abc", .{ .method = method, .preserve_order = true, .limit = 1 }, &matches, &out);
+        filterIndices(labels[0..], "abcd", .{ .method = method, .preserve_order = true, .limit = 1 }, &matches, &out);
         try std.testing.expectEqualSlices(usize, &[_]usize{0}, out.items);
     }
 }
@@ -279,4 +279,17 @@ test "fuzzy empty query keeps input order" {
 test "fuzzy substring beats scattered subsequence regardless of order" {
     const labels = [_][]const u8{ "to d a y", "today.md" };
     try expectOrder(&labels, "today", &.{ 1, 0 });
+}
+
+test "levenshtein fallback stays quiet for short queries" {
+    const labels = [_][]const u8{ "ab", "abc", "xyz", "q" };
+    var matches = std.ArrayList(Match).empty;
+    var out = std.ArrayList(usize).empty;
+    defer matches.deinit(std.testing.allocator);
+    defer out.deinit(std.testing.allocator);
+    try matches.ensureTotalCapacity(std.testing.allocator, labels.len);
+    try out.ensureTotalCapacity(std.testing.allocator, labels.len);
+
+    filterIndices(labels[0..], "zz", .{ .method = .fuzzy }, &matches, &out);
+    try std.testing.expectEqual(@as(usize, 0), out.items.len);
 }

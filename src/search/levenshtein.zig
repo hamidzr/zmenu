@@ -3,9 +3,13 @@ const types = @import("types.zig");
 const util = @import("util.zig");
 
 const levenshtein_distance_threshold: usize = 2;
+/// shorter queries are within the threshold of almost any short word
+const min_query_len: usize = 4;
 
+/// Suggest labels with a word within the distance threshold of the query,
+/// so typos like "chrme" find "Google Chrome" without whole-label noise.
 pub fn appendFallbackMatches(labels: []const []const u8, query: []const u8, matches: *std.ArrayList(types.Match)) void {
-    if (query.len == 0) return;
+    if (query.len < min_query_len) return;
 
     var max_len: usize = query.len;
     for (labels) |label| {
@@ -25,11 +29,7 @@ pub fn appendFallbackMatches(labels: []const []const u8, query: []const u8, matc
             }
         }
         if (already_matched) continue;
-        // distance is at least the length gap, so skip guaranteed misses
-        const len_gap = @max(label.len, query.len) - @min(label.len, query.len);
-        if (len_gap > levenshtein_distance_threshold) continue;
-
-        const distance = levenshteinDistance(query, label, row_buffer[0 .. label.len + 1], ignore_case);
+        const distance = bestWordDistance(query, label, row_buffer, ignore_case);
         if (distance <= levenshtein_distance_threshold) {
             matches.appendAssumeCapacity(.{
                 .index = idx,
@@ -37,6 +37,32 @@ pub fn appendFallbackMatches(labels: []const []const u8, query: []const u8, matc
             });
         }
     }
+}
+
+fn isWordByte(c: u8) bool {
+    return std.ascii.isAlphanumeric(c) or c >= 0x80;
+}
+
+/// smallest distance from the query to any word of the label; row needs
+/// label.len + 1 slots
+fn bestWordDistance(query: []const u8, label: []const u8, row: []usize, ignore_case: bool) usize {
+    var best: usize = std.math.maxInt(usize);
+    var i: usize = 0;
+    while (i < label.len) {
+        if (!isWordByte(label[i])) {
+            i += 1;
+            continue;
+        }
+        var end = i;
+        while (end < label.len and isWordByte(label[end])) end += 1;
+        const word = label[i..end];
+        i = end;
+        // distance is at least the length gap, so skip guaranteed misses
+        const len_gap = @max(word.len, query.len) - @min(word.len, query.len);
+        if (len_gap > levenshtein_distance_threshold) continue;
+        best = @min(best, levenshteinDistance(query, word, row[0 .. word.len + 1], ignore_case));
+    }
+    return best;
 }
 
 fn levenshteinDistance(a: []const u8, b: []const u8, row: []usize, ignore_case: bool) usize {
@@ -70,14 +96,30 @@ fn distanceScore(distance: usize) i32 {
     return -capped;
 }
 
-test "fallback keeps labels at the length-difference boundary" {
+test "fallback keeps words at the length-difference boundary" {
     var buf: [8]types.Match = undefined;
     var matches = std.ArrayList(types.Match).initBuffer(&buf);
-    // "ab" -> "abcd" is two insertions; "abcde" is three and must be dropped
-    appendFallbackMatches(&.{ "abcd", "abcde", "xb", "a" }, "ab", &matches);
+    // "abcd" -> "abcdef" is two insertions; "abcdefg" is three and must be dropped
+    appendFallbackMatches(&.{ "abcdef", "abcdefg", "xbcd", "abc" }, "abcd", &matches);
     try std.testing.expectEqual(@as(usize, 3), matches.items.len);
     try std.testing.expectEqual(@as(usize, 0), matches.items[0].index);
     try std.testing.expectEqual(@as(i32, -2), matches.items[0].score);
     try std.testing.expectEqual(@as(usize, 2), matches.items[1].index);
     try std.testing.expectEqual(@as(usize, 3), matches.items[2].index);
+}
+
+test "fallback ignores queries shorter than four chars" {
+    var buf: [8]types.Match = undefined;
+    var matches = std.ArrayList(types.Match).initBuffer(&buf);
+    appendFallbackMatches(&.{ "ab", "abc", "xyz" }, "abc", &matches);
+    try std.testing.expectEqual(@as(usize, 0), matches.items.len);
+}
+
+test "fallback compares against label words, not the whole label" {
+    var buf: [8]types.Match = undefined;
+    var matches = std.ArrayList(types.Match).initBuffer(&buf);
+    appendFallbackMatches(&.{ "Google Chrome Dev", "Safari", "Chromium - release notes" }, "chrme", &matches);
+    try std.testing.expectEqual(@as(usize, 1), matches.items.len);
+    try std.testing.expectEqual(@as(usize, 0), matches.items[0].index);
+    try std.testing.expectEqual(@as(i32, -1), matches.items[0].score);
 }
