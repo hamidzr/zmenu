@@ -438,6 +438,8 @@ pub fn run(cli_config: appconfig.Config) !void {
         .row_font = table_font,
         .counter_font = counter_font,
         .bold_font = nsFontWeight(clamp(config.row_height * 0.46, 13.0, 16.0), objc_helpers.font_weight_bold),
+        .subtitle_font = nsFontWeight(clamp(config.row_height * 0.46, 13.0, 16.0), font_weight_regular),
+        .detail_font = nsFontWeight(clamp(config.row_height * 0.38, 11.0, 13.5), font_weight_regular),
         .hint_font = objc_helpers.nsFontMonospacedDigit(clamp(config.row_height * 0.36, 11.0, 13.0), font_weight_regular),
         .palette = palette,
         .config = config,

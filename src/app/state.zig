@@ -21,6 +21,9 @@ pub const AppState = struct {
     hint_font: objc.Object,
     /// matched characters of a row label
     bold_font: objc.Object,
+    /// subtitle after the label, and the right-aligned detail
+    subtitle_font: objc.Object,
+    detail_font: objc.Object,
     palette: theme.Palette,
     /// row last styled as selected, so a selection change restyles just two rows
     styled_selected_row: ?usize = null,

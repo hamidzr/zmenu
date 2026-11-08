@@ -1,0 +1,15 @@
+{"v":3,"cmd":"set","scopes":[{"prefix":"t","kind":"tab","label":"Tabs"},{"prefix":"w","kind":"window","label":"Windows"}],"items":[
+{"id":"calc","label":"{result}","subtitle":"{q}","detail":"Copy","calc":true,"icon":"/System/Applications/Calculator.app"},
+{"id":"search:google","label":"Search Google for {q}","detail":"Web","prefix":"g ","icon":"/Applications/Safari.app"},
+{"id":"search:fallback","label":"Search the web for {q}","fallback":true,"icon":"/Applications/Safari.app"},
+{"id":"win:1","label":"Inbox - Gmail","subtitle":"Safari","detail":"S2","kind":"window","action":"Switch","icon":"/Applications/Safari.app"},
+{"id":"win:2","label":"zmenu - Terminal","subtitle":"Terminal","detail":"S1","kind":"window","action":"Switch","icon":"/System/Applications/Utilities/Terminal.app"},
+{"id":"tab:1","label":"Inbox (3) - Gmail","subtitle":"mail.google.com","detail":"Tab","kind":"tab","icon":"/Applications/Safari.app"},
+{"id":"tab:2","label":"Safari Technology Preview release notes","subtitle":"developer.apple.com","detail":"Tab","kind":"tab","icon":"/Applications/Safari.app"},
+{"id":"tmux:main","label":"main: 3 windows","subtitle":"~/projects/zmenu","detail":"5m","kind":"tmux","icon":"/System/Applications/Utilities/Terminal.app"},
+{"id":"file:ipc","label":"IPC_PROTOCOL.md","subtitle":"~/projects/zmenu","detail":"2h","kind":"file","icon":"/System/Applications/TextEdit.app"},
+{"id":"app:safari","label":"Safari","kind":"app","icon":"/Applications/Safari.app"},
+{"id":"app:terminal","label":"Terminal","kind":"app","icon":"/System/Applications/Utilities/Terminal.app"},
+{"id":"app:notes","label":"Notes","subtitle":"Apple","keywords":"memo scratch","kind":"app","icon":"/System/Applications/Notes.app"},
+{"id":"app:calendar","label":"Calendar","kind":"app","icon":"/System/Applications/Calendar.app"}
+]}

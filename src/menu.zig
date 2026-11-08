@@ -303,6 +303,19 @@ pub const Model = struct {
         return &self.items[self.rows.items[row].item];
     }
 
+    pub fn rowLabel(self: *const Model, row: usize) [:0]const u8 {
+        return self.rowItem(row).label;
+    }
+
+    pub fn rowSubtitle(self: *const Model, row: usize) ?[:0]const u8 {
+        return self.rowItem(row).subtitle;
+    }
+
+    /// regular rows are matched against the query, so their text is highlighted
+    pub fn rowIsMatch(self: *const Model, row: usize) bool {
+        return self.rowItem(row).template == .none;
+    }
+
     /// query changed: select the top row and forget any manual move
     pub fn applyFilter(self: *Model, query: []const u8, opts: search.Options) void {
         self.refilter(query, opts);

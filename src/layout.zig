@@ -45,6 +45,19 @@ pub const Metrics = struct {
     }
 };
 
+/// a row's detail text takes at most this share of the row width
+pub const detail_max_fraction: f64 = 0.30;
+
+/// gap between the label area and the detail text
+pub const detail_gap: f64 = 8.0;
+
+/// Width given to the detail text: its own width, at most `detail_max_fraction`
+/// of the row. Longer text is tail-truncated inside that width.
+pub fn detailWidth(text_width: f64, row_width: f64) f64 {
+    const limit = @max(row_width, 0.0) * detail_max_fraction;
+    return @min(@max(text_width, 0.0), limit);
+}
+
 /// index of the screen frame containing the point (the mouse pointer)
 pub fn screenIndexAt(frames: []const Rect, point: Point) ?usize {
     for (frames, 0..) |frame, index| {
@@ -116,4 +129,11 @@ test "top is lifted so the tallest window fits below it" {
 test "a window wider than the screen starts at the left edge" {
     const visible = Rect{ .origin = .{ .x = 50, .y = 0 }, .size = .{ .width = 400, .height = 800 } };
     try std.testing.expectEqual(@as(f64, 50), topLeftIn(visible, 600, 100).x);
+}
+
+test "detail takes its own width up to 30 percent of the row" {
+    try std.testing.expectEqual(@as(f64, 24), detailWidth(24, 600));
+    try std.testing.expectEqual(@as(f64, 180), detailWidth(400, 600));
+    try std.testing.expectEqual(@as(f64, 0), detailWidth(-3, 600));
+    try std.testing.expectEqual(@as(f64, 0), detailWidth(50, -10));
 }

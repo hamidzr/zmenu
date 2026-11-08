@@ -259,7 +259,7 @@ pub fn tableViewViewForTableColumn(
         .alignment = 0,
         // text sits inside the rounded selection fill, which starts 4pt in
         .left_pad = if (app_state.config.hasNumericSelectionColumn() or app_state.config.show_icons) 6.0 else 12.0,
-        .right_pad = 6.0,
+        .right_pad = views.item_right_pad,
     });
     views.configureItemCell(app_state, cell, row_index);
     return cell.value;
