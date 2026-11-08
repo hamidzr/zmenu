@@ -314,7 +314,7 @@ fn readLineAlloc(reader: *std.Io.Reader, allocator: std.mem.Allocator, max_len: 
     return try buffer.toOwnedSlice(allocator);
 }
 
-fn handleIpcPayload(queue: *UpdateQueue, payload: []const u8) void {
+pub fn handleIpcPayload(queue: *UpdateQueue, payload: []const u8) void {
     const parsed = std.json.parseFromSlice(ipc.Message, std.heap.c_allocator, payload, .{ .ignore_unknown_fields = true }) catch return;
     defer parsed.deinit();
 

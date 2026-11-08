@@ -49,6 +49,10 @@ clean:
 visual:
 	scripts/visual_test.sh
 
+# render offscreen ui snapshots to zig-out/snapshots (dev-only, never takes focus)
+snapshot: build
+	scripts/snapshot.sh
+
 # measure cold spawn-to-accept cost (requires hyperfine)
 bench:
 	scripts/bench_spawn.sh

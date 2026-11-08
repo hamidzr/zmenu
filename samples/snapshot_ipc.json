@@ -1,0 +1,10 @@
+{"v":2,"cmd":"set","items":[
+{"id":"app:safari","label":"Safari","icon":"/Applications/Safari.app"},
+{"id":"app:terminal","label":"Terminal","icon":"/System/Applications/Utilities/Terminal.app"},
+{"id":"app:finder","label":"Finder","icon":"/System/Library/CoreServices/Finder.app"},
+{"id":"app:notes","label":"Notes","icon":"/System/Applications/Notes.app"},
+{"id":"app:calendar","label":"Calendar","icon":"/System/Applications/Calendar.app"},
+{"id":"app:mail","label":"Mail","icon":"/System/Applications/Mail.app"},
+{"id":"app:music","label":"Music","icon":"/System/Applications/Music.app"},
+{"id":"app:activity","label":"Activity Monitor","icon":"/System/Applications/Utilities/Activity Monitor.app"}
+]}

@@ -7,6 +7,7 @@ const classes = @import("app/classes.zig");
 const logic = @import("app/logic.zig");
 const objc_helpers = @import("app/objc_helpers.zig");
 const state = @import("app/state.zig");
+const snapshot = @import("app/snapshot.zig");
 const updates = @import("app/updates.zig");
 const menu = @import("menu.zig");
 const pid = @import("pid.zig");
@@ -30,6 +31,7 @@ const startUpdateQueue = updates.startUpdateQueue;
 const followStdinThread = updates.followStdinThread;
 
 const NSApplicationActivationPolicyAccessory: i64 = 1;
+const NSApplicationActivationPolicyProhibited: i64 = 2;
 const NSWindowStyleMaskBorderless: u64 = 0;
 const NSBackingStoreBuffered: u64 = 2;
 
@@ -55,10 +57,18 @@ fn addFixedColumn(table_view: objc.Object, identifier: [*:0]const u8, width: f64
     return column;
 }
 
-pub fn run(config: appconfig.Config) !void {
+pub fn run(cli_config: appconfig.Config) !void {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
     const allocator = arena.allocator();
+
+    // dev-only offscreen render (see snapshot.zig): never activates or shows a window
+    const snap = snapshot.optionsFromEnv(allocator);
+    var config = cli_config;
+    if (snap) |options| {
+        if (options.ipc_file != null) config.ipc_only = true;
+        config.auto_accept = false;
+    }
 
     var items: []menu.MenuItem = &[_]menu.MenuItem{};
     if (!config.ipc_only and !config.follow_stdin) {
@@ -74,14 +84,15 @@ pub fn run(config: appconfig.Config) !void {
     }
 
     time_compat.startupStage("items_read");
-    const pid_path = pid.create(allocator, config.menu_id) catch {
+    // a snapshot must not collide with a live instance of the same menu id
+    const pid_path: ?[]const u8 = if (snap != null) null else pid.create(allocator, config.menu_id) catch {
         io_compat.stderrPrint("zmenu: another instance is running\n", .{}) catch {};
         std.process.exit(exit_codes.unknown_error);
     };
-    defer pid.remove(pid_path);
+    defer if (pid_path) |path| pid.remove(path);
 
     var initial_query: []const u8 = config.initial_query;
-    if (initial_query.len == 0 and config.menu_id.len > 0) {
+    if (snap == null and initial_query.len == 0 and config.menu_id.len > 0) {
         if (cache.load(allocator, config.menu_id)) |cached| {
             if (cached) |cached_state| {
                 if (cached_state.last_query.len > 0) {
@@ -96,10 +107,12 @@ pub fn run(config: appconfig.Config) !void {
 
     const NSApplication = objc.getClass("NSApplication").?;
     const app = NSApplication.msgSend(objc.Object, "sharedApplication", .{});
-    _ = app.msgSend(bool, "setActivationPolicy:", .{NSApplicationActivationPolicyAccessory});
+    const policy = if (snap != null) NSApplicationActivationPolicyProhibited else NSApplicationActivationPolicyAccessory;
+    _ = app.msgSend(bool, "setActivationPolicy:", .{policy});
+    if (snap) |options| snapshot.applyAppearance(app, options);
     time_compat.startupStage("app_initialized");
     // overlap activation with view setup; auto-accept can exit without taking focus
-    if (!config.auto_accept) activateApp(app);
+    if (snap == null and !config.auto_accept) activateApp(app);
 
     const style: u64 = NSWindowStyleMaskBorderless;
     var window_width = config.window_width;
@@ -140,7 +153,7 @@ pub fn run(config: appconfig.Config) !void {
         false,
     });
 
-    window.msgSend(void, "center", .{});
+    if (snap == null) window.msgSend(void, "center", .{});
     window.msgSend(void, "setTitle:", .{nsString(config.title)});
 
     // transparent window so the vibrancy material can show through
@@ -378,7 +391,8 @@ pub fn run(config: appconfig.Config) !void {
         content_view.msgSend(void, "addSubview:", .{match_label});
     }
 
-    const queue = try startUpdateQueue(config);
+    // no socket in snapshot mode: opening one would replace a live instance's
+    const queue = if (snap != null) updates.QueueState{ .queue = null, .ipc_path = null } else try startUpdateQueue(config);
     time_compat.startupStage("ui_built");
     defer queue.deinit();
 
@@ -437,6 +451,7 @@ pub fn run(config: appconfig.Config) !void {
     } else {
         logic.applyFilter(&app_state, "");
     }
+    if (snap) |options| snapshot.finish(&app_state, options);
     if (config.render_bench) {
         scheduleTimer(0.2, handler, "onRenderBench:", false);
     } else {

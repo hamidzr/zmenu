@@ -365,7 +365,7 @@ pub fn onAutoAcceptTimer(target: objc.c.id, sel: objc.c.SEL, timer: objc.c.id) c
     }
 }
 
-fn drainUpdates() void {
+pub fn drainUpdates() void {
     const app_state = state.g_state orelse return;
     const queue = app_state.update_queue orelse return;
     const updates_slice = queue.drain();

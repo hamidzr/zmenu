@@ -34,6 +34,7 @@
 - `zig build test` / `just test`: run search and streamed-update tests.
 - `just fmt`: format `src/` with Zig; `just check`: `zig fmt --check src/` plus `zig build test` (tests are intentionally part of `check` here; both are fast and headless).
 - `just install`: build and copy both binaries to `~/.local/bin/`. Run after rebuilding to refresh installed copies.
+- `just snapshot`: dev-only offscreen render to `zig-out/snapshots/*.png` (dark and light, query, no-results, loading, IPC icons). It never shows or activates a window (activation policy Prohibited, no `orderFront`, no socket or pid file), so it is safe to run without stealing focus; read the PNGs to verify UI changes. Driven by `ZMENU_SNAPSHOT=<out.png>` plus optional `ZMENU_SNAPSHOT_IPC=<file>` (one IPC JSON message), `ZMENU_SNAPSHOT_SELECT=<n>`, `ZMENU_SNAPSHOT_APPEARANCE=light|dark`; code in `src/app/snapshot.zig`, samples in `samples/snapshot_*`, runner `scripts/snapshot.sh`. Vibrancy renders empty offscreen, so a solid approximation is painted behind the content; real blur, screen placement and clicks are not covered.
 - `just visual`: capture/compare a UI snapshot; `UPDATE_SNAPSHOT=1` refreshes the baseline.
 - `just bench`, `just render-bench`, and `just startup-bench`: process, rendering, and external-launch keyboard benchmarks respectively.
 - `just clean`: remove `zig-out/`, `.zig-cache/`, and `bin/`.
