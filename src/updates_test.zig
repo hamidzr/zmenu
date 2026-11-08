@@ -17,6 +17,7 @@ test {
     _ = @import("display.zig");
     _ = @import("row_text.zig");
     _ = @import("calc.zig");
+    _ = @import("template.zig");
 }
 
 // A set must become visible to the UI in one drain, never item by item.

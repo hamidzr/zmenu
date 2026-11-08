@@ -1,7 +1,9 @@
 const std = @import("std");
 const io_compat = @import("io_compat.zig");
+const calc = @import("calc.zig");
 const ipc = @import("ipc.zig");
 const search = @import("search.zig");
+const template = @import("template.zig");
 
 /// Template items are not matched against the query: they appear on a
 /// condition (see `rows`). Regular items have `.none`.
@@ -32,10 +34,23 @@ pub const MenuItem = struct {
     template_prefix: []const u8 = "",
 };
 
+/// A template row's text with `{q}` and `{result}` filled in, plus what accepting
+/// it reports. Lives until the next refilter.
+pub const Expanded = struct {
+    label: [:0]const u8,
+    subtitle: ?[:0]const u8,
+    /// prefix: the query after the prefix; fallback and calc: the whole query
+    arg: []const u8,
+    /// calc: the formatted value
+    result: ?[]const u8,
+};
+
 /// One visible line of the list: the item behind it. Rows, not items, are what
 /// the list shows, selects, numbers and accepts.
 pub const Row = struct {
     item: usize,
+    /// set on template rows, whose text depends on the query
+    expanded: ?*const Expanded = null,
 };
 
 /// what the user had selected before an items update, to find it again
@@ -147,8 +162,12 @@ pub const Model = struct {
     view: std.ArrayList([]const u8),
     /// items matching the query, best first
     regular: std.ArrayList(usize),
+    /// template items (calc, prefix, fallback), ascending
+    templates: std.ArrayList(usize),
     /// what the list shows, top to bottom
     rows: std.ArrayList(Row),
+    /// owns the `Expanded` text of the current rows
+    row_arena: std.heap.ArenaAllocator,
     scores: []i32,
     match_count: usize,
     selected: isize,
@@ -196,7 +215,9 @@ pub const Model = struct {
             .candidates = .empty,
             .view = .empty,
             .regular = .empty,
+            .templates = .empty,
             .rows = .empty,
+            .row_arena = std.heap.ArenaAllocator.init(allocator),
             .scores = scores,
             .match_count = 0,
             .selected = -1,
@@ -217,6 +238,8 @@ pub const Model = struct {
         self.view.deinit(allocator);
         self.regular.deinit(allocator);
         self.rows.deinit(allocator);
+        self.templates.deinit(allocator);
+        self.row_arena.deinit();
         self.seen.deinit(allocator);
         allocator.free(self.items);
         allocator.free(self.docs);
@@ -275,20 +298,79 @@ pub const Model = struct {
                 self.scores[match.index] = match.score;
             }
         }
+        self.buildRows(query);
+    }
+
+    /// Rows are [calc] [active prefix] [regular matches] [fallbacks when there
+    /// is no regular match]; the template rows are expanded for this query.
+    fn buildRows(self: *Model, query: []const u8) void {
+        _ = self.row_arena.reset(.retain_capacity);
         self.rows.clearRetainingCapacity();
+        const has_query = std.mem.trim(u8, query, " \t\r\n").len > 0;
+
+        if (has_query) self.appendCalcRows(query);
+        self.appendPrefixRows(query);
         for (self.regular.items) |item_index| self.rows.appendAssumeCapacity(.{ .item = item_index });
+        if (has_query and self.regular.items.len == 0) self.appendTemplateRows(.fallback, query, query, null);
+    }
+
+    fn appendCalcRows(self: *Model, query: []const u8) void {
+        const value = calc.evaluate(query) orelse return;
+        var buf: [calc.format_buf_len]u8 = undefined;
+        const result = self.row_arena.allocator().dupe(u8, calc.format(&buf, value)) catch return;
+        self.appendTemplateRows(.calc, query, query, result);
+    }
+
+    fn appendPrefixRows(self: *Model, query: []const u8) void {
+        for (self.templates.items) |item_index| {
+            const item = self.items[item_index];
+            if (item.template != .prefix) continue;
+            const rest = template.prefixRemainder(item.template_prefix, query) orelse continue;
+            self.appendExpandedRow(item_index, rest, rest, null);
+        }
+    }
+
+    /// a row for every template item of `kind`, in the order supplied
+    fn appendTemplateRows(self: *Model, kind: Template, q: []const u8, arg: []const u8, result: ?[]const u8) void {
+        for (self.templates.items) |item_index| {
+            if (self.items[item_index].template == kind) self.appendExpandedRow(item_index, q, arg, result);
+        }
+    }
+
+    fn appendExpandedRow(self: *Model, item_index: usize, q: []const u8, arg: []const u8, result: ?[]const u8) void {
+        const arena = self.row_arena.allocator();
+        const item = self.items[item_index];
+        const expanded = arena.create(Expanded) catch return;
+        expanded.* = .{
+            .label = template.expand(arena, item.label, q, result) catch return,
+            .subtitle = if (item.subtitle) |text| template.expand(arena, text, q, result) catch return else null,
+            .arg = arg,
+            .result = result,
+        };
+        self.rows.appendAssumeCapacity(.{ .item = item_index, .expanded = expanded });
+    }
+
+    /// items that count in the "n / total" counter: everything but template items
+    pub fn regularTotal(self: *const Model) usize {
+        return self.candidates.items.len;
     }
 
     /// rebuild the candidate list after the items changed; capacity is reserved
     fn reindex(self: *Model) void {
         self.candidates.clearRetainingCapacity();
+        self.templates.clearRetainingCapacity();
         for (self.items, 0..) |item, index| {
-            if (item.template == .none) self.candidates.appendAssumeCapacity(index);
+            if (item.template == .none) {
+                self.candidates.appendAssumeCapacity(index);
+            } else {
+                self.templates.appendAssumeCapacity(index);
+            }
         }
     }
 
     fn reserveRows(self: *Model, allocator: std.mem.Allocator, count: usize) !void {
         try self.candidates.ensureTotalCapacity(allocator, count);
+        try self.templates.ensureTotalCapacity(allocator, count);
         try self.view.ensureTotalCapacity(allocator, count);
         try self.matches.ensureTotalCapacity(allocator, count);
         try self.regular.ensureTotalCapacity(allocator, count);
@@ -304,10 +386,12 @@ pub const Model = struct {
     }
 
     pub fn rowLabel(self: *const Model, row: usize) [:0]const u8 {
+        if (self.rows.items[row].expanded) |expanded| return expanded.label;
         return self.rowItem(row).label;
     }
 
     pub fn rowSubtitle(self: *const Model, row: usize) ?[:0]const u8 {
+        if (self.rows.items[row].expanded) |expanded| return expanded.subtitle;
         return self.rowItem(row).subtitle;
     }
 
@@ -742,4 +826,177 @@ test "template items are never matched as regular items" {
     try std.testing.expectEqual(@as(usize, 2), model.rowCount());
     model.applyFilter("", .{});
     try std.testing.expectEqual(@as(usize, 2), model.rowCount());
+}
+
+fn templateItem(id: [:0]const u8, label: [:0]const u8, kind: Template, prefix: []const u8) MenuItem {
+    return .{ .label = label, .index = 0, .icon = null, .id = id, .template = kind, .template_prefix = prefix };
+}
+
+fn launcherModel(allocator: std.mem.Allocator) !Model {
+    var model = try Model.init(allocator, try testItems(allocator, &.{}), false);
+    try model.setItems(allocator, &.{
+        idItem("app:safari", "Safari"),
+        idItem("app:notes", "Notes"),
+        templateItem("calc", "{result}", .calc, ""),
+        templateItem("g", "Search Google for {q}", .prefix, "g "),
+        templateItem("yt", "YouTube: {q}", .prefix, "yt "),
+        templateItem("web", "Search the web for {q}", .fallback, ""),
+        templateItem("web2", "Look up {q}", .fallback, ""),
+    });
+    return model;
+}
+
+fn expectRows(model: *const Model, expected: []const []const u8) !void {
+    try std.testing.expectEqual(expected.len, model.rowCount());
+    for (expected, 0..) |label, row| try std.testing.expectEqualStrings(label, model.rowLabel(row));
+}
+
+test "calc row is pinned on top for an arithmetic query" {
+    const allocator = std.testing.allocator;
+    var model = try launcherModel(allocator);
+    defer model.deinit(allocator);
+    model.applyFilter("12*(3+4)", .{});
+    // nothing else matches, so the fallbacks follow the calc row
+    try expectRows(&model, &.{ "84", "Search the web for 12*(3+4)", "Look up 12*(3+4)" });
+    try std.testing.expectEqualStrings("12*(3+4)", model.rows.items[0].expanded.?.arg);
+    try std.testing.expectEqualStrings("84", model.rows.items[0].expanded.?.result.?);
+    try std.testing.expectEqual(@as(isize, 0), model.selected);
+
+    // a plain number or an incomplete expression is not a calculation
+    model.applyFilter("42", .{});
+    try expectRows(&model, &.{ "Search the web for 42", "Look up 42" });
+    model.applyFilter("1+", .{});
+    try expectRows(&model, &.{ "Search the web for 1+", "Look up 1+" });
+    model.applyFilter("1/0", .{});
+    try expectRows(&model, &.{ "Search the web for 1/0", "Look up 1/0" });
+}
+
+test "calc sits above regular matches" {
+    const allocator = std.testing.allocator;
+    var model = try Model.init(allocator, try testItems(allocator, &.{}), false);
+    defer model.deinit(allocator);
+    try model.setItems(allocator, &.{ idItem("a", "Notes 1+2"), templateItem("calc", "= {result}", .calc, "") });
+    model.applyFilter("1+2", .{});
+    try expectRows(&model, &.{ "= 3", "Notes 1+2" });
+    try std.testing.expectEqual(@as(usize, 1), model.match_count);
+}
+
+test "prefix rows are pinned above regular matches with the remainder" {
+    const allocator = std.testing.allocator;
+    var model = try launcherModel(allocator);
+    defer model.deinit(allocator);
+    try model.appendItems(allocator, &.{idItem("n2", "g weather notes")});
+    model.applyFilter("g  weather", .{});
+    try expectRows(&model, &.{ "Search Google for weather", "g weather notes" });
+    try std.testing.expectEqualStrings("weather", model.rows.items[0].expanded.?.arg);
+    try std.testing.expect(model.rows.items[0].expanded.?.result == null);
+    model.applyFilter("G x", .{});
+    try expectRows(&model, &.{ "Search Google for x", "Search the web for G x", "Look up G x" });
+    model.applyFilter("yt cats", .{});
+    try expectRows(&model, &.{ "YouTube: cats", "Search the web for yt cats", "Look up yt cats" });
+    // fallbacks stay hidden while a regular item matches
+    model.applyFilter("g weather", .{});
+    try expectRows(&model, &.{ "Search Google for weather", "g weather notes" });
+}
+
+test "a prefix needs the whole prefix typed" {
+    const allocator = std.testing.allocator;
+    var model = try launcherModel(allocator);
+    defer model.deinit(allocator);
+    model.applyFilter("g", .{});
+    // "g" alone is no prefix; it matches nothing, so fallbacks show
+    try expectRows(&model, &.{ "Search the web for g", "Look up g" });
+    model.applyFilter("g ", .{});
+    try expectRows(&model, &.{ "Search Google for ", "Search the web for g ", "Look up g " });
+}
+
+test "fallbacks show only for a non-empty query with no regular match" {
+    const allocator = std.testing.allocator;
+    var model = try launcherModel(allocator);
+    defer model.deinit(allocator);
+    model.applyFilter("", .{});
+    try expectRows(&model, &.{ "Safari", "Notes" });
+    model.applyFilter("   ", .{});
+    try expectRows(&model, &.{ "Safari", "Notes" });
+    model.applyFilter("saf", .{});
+    try expectRows(&model, &.{"Safari"});
+    model.applyFilter("zzqq", .{ .levenshtein_fallback = false });
+    try expectRows(&model, &.{ "Search the web for zzqq", "Look up zzqq" });
+    try std.testing.expectEqualStrings("zzqq", model.rows.items[1].expanded.?.arg);
+    try std.testing.expectEqual(@as(usize, 0), model.match_count);
+    try std.testing.expectEqual(@as(isize, 0), model.selected);
+}
+
+test "prefix rows come before fallbacks when nothing else matches" {
+    const allocator = std.testing.allocator;
+    var model = try launcherModel(allocator);
+    defer model.deinit(allocator);
+    model.applyFilter("g zzqq", .{ .levenshtein_fallback = false });
+    try expectRows(&model, &.{ "Search Google for zzqq", "Search the web for g zzqq", "Look up g zzqq" });
+}
+
+test "template items stay out of the counter total" {
+    const allocator = std.testing.allocator;
+    var model = try launcherModel(allocator);
+    defer model.deinit(allocator);
+    try std.testing.expectEqual(@as(usize, 2), model.regularTotal());
+    try model.appendItems(allocator, &.{idItem("x", "X")});
+    try std.testing.expectEqual(@as(usize, 3), model.regularTotal());
+    try model.prependItems(allocator, &.{templateItem("t", "T {q}", .fallback, "")});
+    try std.testing.expectEqual(@as(usize, 3), model.regularTotal());
+    model.applyFilter("g hi", .{});
+    try std.testing.expectEqual(@as(usize, 0), model.match_count);
+    try std.testing.expectEqual(@as(usize, 4), model.rowCount());
+}
+
+test "selection by id survives updates that keep or move template rows" {
+    const allocator = std.testing.allocator;
+    var model = try launcherModel(allocator);
+    defer model.deinit(allocator);
+    model.applyFilter("zzqq", .{ .levenshtein_fallback = false });
+    model.moveSelection(1);
+    try std.testing.expectEqualStrings("web2", model.selectedItem().?.id.?);
+
+    // reordered template items: the user's row follows its id
+    try model.setItems(allocator, &.{
+        templateItem("web2", "Look up {q}", .fallback, ""),
+        templateItem("web", "Search the web for {q}", .fallback, ""),
+        idItem("app:x", "X"),
+    });
+    model.applyFilterKeepSelection("zzqq", .{ .levenshtein_fallback = false });
+    try std.testing.expectEqual(@as(isize, 0), model.selected);
+    try std.testing.expectEqualStrings("web2", model.selectedItem().?.id.?);
+    try std.testing.expectEqualStrings("Look up zzqq", model.rowLabel(0));
+}
+
+test "selection by id survives updates under a calc query" {
+    const allocator = std.testing.allocator;
+    var model = try launcherModel(allocator);
+    defer model.deinit(allocator);
+    model.applyFilter("1+1", .{});
+    try expectRows(&model, &.{ "2", "Search the web for 1+1", "Look up 1+1" });
+    model.moveSelection(2);
+    try std.testing.expectEqualStrings("web2", model.selectedItem().?.id.?);
+
+    // regular items arrive and a prefix row is added; the user stays on "web2"
+    try model.appendItems(allocator, &.{idItem("late", "Late 1+1")});
+    model.applyFilterKeepSelection("1+1", .{});
+    try expectRows(&model, &.{ "2", "Late 1+1" });
+    // the selected template row is gone (fallbacks hide), so the same row index is kept, clamped
+    try std.testing.expectEqual(@as(isize, 1), model.selected);
+
+    try model.setItems(allocator, &.{ templateItem("calc", "{result}", .calc, ""), templateItem("web2", "Look up {q}", .fallback, "") });
+    model.applyFilterKeepSelection("1+1", .{});
+    try std.testing.expectEqualStrings("web2", model.selectedItem().?.id.?);
+    try std.testing.expectEqual(@as(isize, 1), model.selected);
+}
+
+test "template rows show only when an item is a template" {
+    const allocator = std.testing.allocator;
+    var model = try Model.init(allocator, try testItems(allocator, &.{ "alpha", "beta" }), false);
+    defer model.deinit(allocator);
+    model.applyFilter("1+2", .{});
+    try std.testing.expectEqual(@as(usize, 0), model.rowCount());
+    model.applyFilter("zzqq", .{});
+    try std.testing.expectEqual(@as(usize, 0), model.rowCount());
 }
