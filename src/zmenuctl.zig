@@ -11,6 +11,7 @@ pub fn main(init: std.process.Init) !void {
     var menu_id: []const u8 = "";
     var socket_override: ?[]const u8 = null;
     var read_stdin = false;
+    var raw_json = false;
 
     var cmd_index: ?usize = null;
     var i: usize = 1;
@@ -32,6 +33,10 @@ pub fn main(init: std.process.Init) !void {
             read_stdin = true;
             continue;
         }
+        if (std.mem.eql(u8, arg, "--json")) {
+            raw_json = true;
+            continue;
+        }
         if (std.mem.eql(u8, arg, "--help") or std.mem.eql(u8, arg, "-h")) {
             return usage();
         }
@@ -44,6 +49,17 @@ pub fn main(init: std.process.Init) !void {
         io_compat.stderrPrint("zmenuctl: invalid menu id (use letters, digits, '-', '_', '.'; max 64; no leading dot)\n", .{}) catch {};
         std.process.exit(1);
     };
+
+    if (raw_json) {
+        // the message comes from stdin as is: any protocol version, every item field
+        const raw = try io_compat.readAllFromFd(allocator, std.posix.STDIN_FILENO, ipc_max_payload);
+        const payload = std.mem.trim(u8, raw, " \t\r\n");
+        ipc.validateRaw(allocator, payload) catch |err| {
+            io_compat.stderrPrint("zmenuctl: stdin is not a protocol message ({s})\n", .{@errorName(err)}) catch {};
+            std.process.exit(1);
+        };
+        return send(allocator, socket_override, menu_id, payload);
+    }
 
     if (cmd_index == null) {
         return usage();
@@ -82,8 +98,13 @@ pub fn main(init: std.process.Init) !void {
     var json_out: std.Io.Writer.Allocating = .init(allocator);
     defer json_out.deinit();
     try std.json.Stringify.value(msg, .{ .emit_null_optional_fields = false }, &json_out.writer);
-    const payload = json_out.written();
+    return send(allocator, socket_override, menu_id, json_out.written());
+}
 
+/// the server ignores messages over 1 MiB
+const ipc_max_payload: usize = 1024 * 1024;
+
+fn send(allocator: std.mem.Allocator, socket_override: ?[]const u8, menu_id: []const u8, payload: []const u8) !void {
     const socket_path = socket_override orelse try ipc.socketPath(allocator, menu_id);
     const address = try std.Io.net.UnixAddress.init(socket_path);
     const stream = try address.connect(io_compat.globalIo());
@@ -112,10 +133,12 @@ fn usage() void {
     io_compat.stdoutPrint(
         \\zmenuctl usage:
         \\  zmenuctl [--menu-id <id>] [--socket <path>] [--stdin] <set|append|prepend> [items...]
+        \\  zmenuctl [--menu-id <id>] [--socket <path>] --json    send one raw protocol message from stdin
         \\
         \\Examples:
         \\  zmenuctl --menu-id demo set --stdin
         \\  zmenuctl --menu-id demo append "new item"
+        \\  zmenuctl --menu-id demo --json < samples/snapshot_v3_actions.json
         \\
     , .{}) catch {};
 }

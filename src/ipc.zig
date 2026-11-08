@@ -78,6 +78,13 @@ pub fn parseCommand(cmd: []const u8) ?Command {
     return null;
 }
 
+/// Checks a raw message the way the server reads it: a JSON object with a known `cmd`.
+pub fn validateRaw(allocator: std.mem.Allocator, payload: []const u8) !void {
+    const parsed = try std.json.parseFromSlice(Incoming, allocator, payload, .{ .ignore_unknown_fields = true });
+    defer parsed.deinit();
+    if (parseCommand(parsed.value.cmd) == null) return error.UnknownCommand;
+}
+
 pub fn socketPath(allocator: std.mem.Allocator, menu_id: []const u8) ![]const u8 {
     const dir = try tempDir(allocator);
     const name = try socketName(allocator, menu_id);
@@ -214,4 +221,13 @@ test privateTmpDir {
     try std.testing.expectError(error.PrivateTmpDirUnsafe, privateTmpDir(allocator, scratch.root, me));
     // a dir for another uid would be created by us, so the owner check rejects it
     try std.testing.expectError(error.PrivateTmpDirUnsafe, privateTmpDir(allocator, scratch.root, me + 1));
+}
+
+test "raw messages need a known command" {
+    const allocator = std.testing.allocator;
+    try validateRaw(allocator, "{\"v\":3,\"cmd\":\"set\",\"items\":[{\"label\":\"a\",\"actions\":[{\"mods\":\"cmd\",\"label\":\"b\"}]}]}");
+    try validateRaw(allocator, "{\"cmd\":\"APPEND\",\"loading\":true}");
+    try std.testing.expectError(error.UnknownCommand, validateRaw(allocator, "{\"cmd\":\"clear\"}"));
+    try std.testing.expectError(error.MissingField, validateRaw(allocator, "{\"items\":[]}"));
+    try std.testing.expectError(error.SyntaxError, validateRaw(allocator, "not json"));
 }
