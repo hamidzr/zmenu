@@ -1,6 +1,7 @@
 const std = @import("std");
 const objc = @import("objc");
 const appconfig = @import("../config.zig");
+const layout = @import("../layout.zig");
 const menu = @import("../menu.zig");
 const updates = @import("updates.zig");
 
@@ -18,6 +19,7 @@ pub const AppState = struct {
     item_text_color: ?objc.Object,
     index_text_color: ?objc.Object,
     config: appconfig.Config,
+    metrics: layout.Metrics,
     pid_path: ?[]const u8,
     ipc_path: ?[]const u8,
     allocator: std.mem.Allocator,

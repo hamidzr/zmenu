@@ -1,22 +1,12 @@
 const std = @import("std");
 const objc = @import("objc");
 const appconfig = @import("../config.zig");
+const geometry = @import("../geometry.zig");
 const io_compat = @import("../io_compat.zig");
 
-pub const NSPoint = extern struct {
-    x: f64,
-    y: f64,
-};
-
-pub const NSSize = extern struct {
-    width: f64,
-    height: f64,
-};
-
-pub const NSRect = extern struct {
-    origin: NSPoint,
-    size: NSSize,
-};
+pub const NSPoint = geometry.Point;
+pub const NSSize = geometry.Size;
+pub const NSRect = geometry.Rect;
 
 pub fn nsString(str: [*:0]const u8) objc.Object {
     const NSString = objc.getClass("NSString").?;

@@ -12,6 +12,12 @@ IPC="$ROOT/samples/snapshot_ipc.json"
 mkdir -p "$OUT"
 rm -f "$OUT"/*.png
 
+# default settings regardless of the developer's own gmenu/zmenu config files
+HOME="$(mktemp -d)"
+export HOME
+unset XDG_CONFIG_HOME
+trap 'rm -rf "$HOME"' EXIT
+
 # snap NAME APPEARANCE [ENV=VALUE...] -- ZMENU_ARGS...  (stdin comes from ITEMS unless ipc)
 snap() {
   local name="$1" appearance="$2"

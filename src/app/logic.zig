@@ -65,6 +65,7 @@ pub fn applyItemUpdate(app_state: *state.AppState) void {
 fn refreshView(app_state: *state.AppState, query: []const u8) void {
     // rows move under a possibly stationary pointer, so drop the stale hover
     app_state.hovered_row = null;
+    fitWindow(app_state);
     if (app_state.index_column) |index_column| {
         const enabled = app_state.config.numericSelectionEnabled(app_state.model.filtered.items.len, query);
         index_column.msgSend(void, "setHidden:", .{!enabled});
@@ -72,6 +73,20 @@ fn refreshView(app_state: *state.AppState, query: []const u8) void {
     app_state.table_view.msgSend(void, "reloadData", .{});
     updateSelection(app_state);
     updateMatchLabel(app_state);
+}
+
+/// Resizes the window to the rows on show, keeping the top edge fixed so the
+/// search field does not move while typing. Subviews follow by autoresizing.
+pub fn fitWindow(app_state: *state.AppState) void {
+    const rows = app_state.metrics.rows(app_state.model.filtered.items.len);
+    const height = app_state.metrics.windowHeight(rows);
+    const frame = app_state.window.msgSend(objc_helpers.NSRect, "frame", .{});
+    if (@abs(frame.size.height - height) < 0.5) return;
+    const resized = objc_helpers.NSRect{
+        .origin = .{ .x = frame.origin.x, .y = frame.origin.y + frame.size.height - height },
+        .size = .{ .width = frame.size.width, .height = height },
+    };
+    app_state.window.msgSend(void, "setFrame:display:", .{ resized, true });
 }
 
 pub fn maybeAutoAccept(app_state: *state.AppState, trigger: AutoAcceptTrigger) void {

@@ -4,6 +4,7 @@ const appconfig = @import("config.zig");
 const cache = @import("cache.zig");
 const callbacks = @import("app/callbacks.zig");
 const classes = @import("app/classes.zig");
+const layout = @import("layout.zig");
 const logic = @import("app/logic.zig");
 const objc_helpers = @import("app/objc_helpers.zig");
 const state = @import("app/state.zig");
@@ -34,6 +35,9 @@ const NSApplicationActivationPolicyAccessory: i64 = 1;
 const NSApplicationActivationPolicyProhibited: i64 = 2;
 const NSWindowStyleMaskBorderless: u64 = 0;
 const NSBackingStoreBuffered: u64 = 2;
+// header views keep their distance from the top edge; the list absorbs height changes
+const ns_view_min_y_margin: c_ulong = 8;
+const ns_view_height_sizable: c_ulong = 16;
 
 fn clamp(value: f64, lo: f64, hi: f64) f64 {
     return @min(@max(value, lo), hi);
@@ -126,14 +130,12 @@ pub fn run(cli_config: appconfig.Config) !void {
     const field_height = config.field_height;
     const padding = config.padding;
     const list_width = window_width - (padding * 2.0);
-    // snap the list to whole rows so the bottom row is never sliced mid-glyph,
-    // then shrink the window by the remainder to keep the padding even
-    var list_height = window_height - field_height - (padding * 3.0);
-    if (config.row_height > 1.0) {
-        const whole_rows = @floor(list_height / config.row_height);
-        if (whole_rows >= 1.0) list_height = whole_rows * config.row_height;
-    }
-    window_height = field_height + (padding * 3.0) + list_height;
+    // the window grows and shrinks with the visible rows (logic.fitWindow); it is
+    // built at the tallest size, snapped to whole rows so the bottom row is never
+    // sliced mid-glyph, with `window_height` as the maximum
+    const metrics = layout.Metrics.init(window_height, field_height, padding, config.row_height);
+    const list_height = metrics.listHeight(metrics.max_rows);
+    window_height = metrics.windowHeight(metrics.max_rows);
     const numeric_width = if (config.hasNumericSelectionColumn()) config.numeric_column_width else 0;
     const icon_width = if (config.show_icons) config.icon_column_width else 0;
     var item_width = list_width - numeric_width - icon_width;
@@ -244,6 +246,7 @@ pub fn run(cli_config: appconfig.Config) !void {
     const text_field = SearchField.msgSend(objc.Object, "alloc", .{})
         .msgSend(objc.Object, "initWithFrame:", .{field_rect});
 
+    text_field.msgSend(void, "setAutoresizingMask:", .{ns_view_min_y_margin});
     text_field.msgSend(void, "setEditable:", .{true});
     text_field.msgSend(void, "setSelectable:", .{true});
     // query changes filter through the delegate; only Return submits a selection
@@ -282,6 +285,7 @@ pub fn run(cli_config: appconfig.Config) !void {
     const NSTextField = objc.getClass("NSTextField").?;
     const match_label = NSTextField.msgSend(objc.Object, "alloc", .{})
         .msgSend(objc.Object, "initWithFrame:", .{match_rect});
+    match_label.msgSend(void, "setAutoresizingMask:", .{ns_view_min_y_margin});
     match_label.msgSend(void, "setBezeled:", .{false});
     match_label.msgSend(void, "setDrawsBackground:", .{false});
     match_label.msgSend(void, "setEditable:", .{false});
@@ -303,6 +307,9 @@ pub fn run(cli_config: appconfig.Config) !void {
 
     const table_font = nsFontWeight(clamp(config.row_height * 0.46, 13.0, 16.0), font_weight_medium);
 
+    // the default (inset) style pads the rows by 5pt top and bottom, which would
+    // slice the last row of a list sized to whole rows
+    table_view.msgSend(void, "setStyle:", .{@as(c_long, 4)}); // NSTableViewStylePlain
     table_view.msgSend(void, "setHeaderView:", .{@as(objc.c.id, null)});
     table_view.msgSend(void, "setAllowsMultipleSelection:", .{false});
     table_view.msgSend(void, "setAllowsEmptySelection:", .{true});
@@ -332,6 +339,7 @@ pub fn run(cli_config: appconfig.Config) !void {
     const scroll_view = NSScrollView.msgSend(objc.Object, "alloc", .{})
         .msgSend(objc.Object, "initWithFrame:", .{list_rect});
 
+    scroll_view.msgSend(void, "setAutoresizingMask:", .{ns_view_height_sizable});
     scroll_view.msgSend(void, "setDocumentView:", .{table_view});
     scroll_view.msgSend(void, "setHasVerticalScroller:", .{true});
     scroll_view.msgSend(void, "setAutohidesScrollers:", .{true});
@@ -380,6 +388,7 @@ pub fn run(cli_config: appconfig.Config) !void {
         const NSView = objc.getClass("NSView").?;
         const field_bg = NSView.msgSend(objc.Object, "alloc", .{})
             .msgSend(objc.Object, "initWithFrame:", .{field_bg_rect});
+        field_bg.msgSend(void, "setAutoresizingMask:", .{ns_view_min_y_margin});
         field_bg.msgSend(void, "setWantsLayer:", .{true});
         const bg_layer = field_bg.msgSend(objc.Object, "layer", .{});
         bg_layer.msgSend(void, "setBackgroundColor:", .{nsColor(color).msgSend(objc.c.id, "CGColor", .{})});
@@ -410,6 +419,7 @@ pub fn run(cli_config: appconfig.Config) !void {
         .item_text_color = text_color,
         .index_text_color = secondary_text_color,
         .config = config,
+        .metrics = metrics,
         .pid_path = pid_path,
         .allocator = allocator,
         .update_queue = queue.queue,
@@ -458,6 +468,8 @@ pub fn run(cli_config: appconfig.Config) !void {
         logic.maybeAutoAccept(&app_state, .initial);
     }
 
+    // size to the first results before the window is shown
+    logic.fitWindow(&app_state);
     time_compat.startupStage("initial_filter");
     if (config.auto_accept) activateApp(app);
     window.msgSend(void, "setAcceptsMouseMovedEvents:", .{true});

@@ -218,7 +218,7 @@ pub fn tableViewViewForTableColumn(
             .font = app_state.row_font,
             .text_color = app_state.index_text_color,
             .alignment = 0,
-            .left_pad = 4.0,
+            .left_pad = 10.0,
             .right_pad = 2.0,
         });
         const query = logic.currentQuery(app_state);
@@ -242,7 +242,8 @@ pub fn tableViewViewForTableColumn(
         .font = app_state.row_font,
         .text_color = app_state.item_text_color,
         .alignment = 0,
-        .left_pad = 6.0,
+        // text sits inside the rounded selection fill, which starts 4pt in
+        .left_pad = if (app_state.config.hasNumericSelectionColumn() or app_state.config.show_icons) 6.0 else 12.0,
         .right_pad = 6.0,
     });
     const item_index = app_state.model.filtered.items[row_index];
