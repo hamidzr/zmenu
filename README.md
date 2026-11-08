@@ -120,6 +120,8 @@ printf "alpha\nbravo\n" | zmenuctl --menu-id demo set --stdin
 zmenuctl --menu-id demo append "charlie"
 ```
 
+`zmenu --version` prints `zmenu` and a line `ipc-protocol 3`, the IPC protocol version this build speaks (a client such as combo-switcher doctor can check compatibility). It exits before any AppKit setup.
+
 Protocol v3 adds optional subtitle, detail and keywords text, kinds with search scopes, calc, prefix and fallback template rows, and a loading flag; see `IPC_PROTOCOL.md`.
 
 IPC-only selection mode ignores stdin and prints the full JSON item on accept:

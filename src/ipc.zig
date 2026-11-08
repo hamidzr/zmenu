@@ -3,6 +3,10 @@ const builtin = @import("builtin");
 const io_compat = @import("io_compat.zig");
 const test_env = @import("test_env.zig");
 
+/// IPC protocol version this build implements; `zmenu --version` reports it so a
+/// client (combo-switcher doctor) can check compatibility
+pub const protocol_version: u32 = 3;
+
 /// A search scope: "<prefix> <text>" narrows the list to items of `kind`
 pub const Scope = struct {
     prefix: []const u8,

@@ -4,6 +4,7 @@ const args = @import("cli/args.zig");
 const config_file = @import("cli/config_file.zig");
 const env = @import("cli/env.zig");
 const io_compat = @import("io_compat.zig");
+const ipc = @import("ipc.zig");
 
 pub fn parse(allocator: std.mem.Allocator, proc_args: std.process.Args) !appconfig.Config {
     var config = appconfig.defaults();
@@ -11,6 +12,11 @@ pub fn parse(allocator: std.mem.Allocator, proc_args: std.process.Args) !appconf
 
     if (args.hasFlag(argv, "--help") or args.hasFlag(argv, "-h")) {
         printHelp();
+        std.process.exit(0);
+    }
+
+    if (args.hasFlag(argv, "--version") or args.hasFlag(argv, "-V")) {
+        io_compat.stdoutPrint("zmenu\nipc-protocol {d}\n", .{ipc.protocol_version}) catch {};
         std.process.exit(0);
     }
 
@@ -37,6 +43,7 @@ fn printHelp() void {
         \\
         \\Flags:
         \\  -h, --help                  Show this help text
+        \\  -V, --version               Show the IPC protocol version
         \\  -m, --menu-id <id>           Menu ID namespace
         \\  -q, --initial-query <text>   Pre-filled search query
         \\  -t, --title <text>           Window title

@@ -4,6 +4,8 @@ zmenu listens on a local Unix domain socket and accepts framed JSON messages.
 The API is intended for updating the in-memory item list while the GUI is
 running. Unknown fields are ignored for forward compatibility.
 
+Version check: `zmenu --version` prints two lines, `zmenu` and `ipc-protocol 3`. The number is the highest protocol version this build implements (`ipc.protocol_version`); older messages (v2) are still accepted.
+
 ## Socket path
 
 The socket lives in the OS temp directory:
