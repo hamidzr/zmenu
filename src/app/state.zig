@@ -3,6 +3,7 @@ const objc = @import("objc");
 const appconfig = @import("../config.zig");
 const layout = @import("../layout.zig");
 const menu = @import("../menu.zig");
+const theme = @import("theme.zig");
 const updates = @import("updates.zig");
 
 pub const AppState = struct {
@@ -16,8 +17,9 @@ pub const AppState = struct {
     handler: objc.Object,
     row_font: objc.Object,
     counter_font: objc.Object,
-    item_text_color: ?objc.Object,
-    index_text_color: ?objc.Object,
+    palette: theme.Palette,
+    /// row last styled as selected, so a selection change restyles just two rows
+    styled_selected_row: ?usize = null,
     config: appconfig.Config,
     metrics: layout.Metrics,
     pid_path: ?[]const u8,

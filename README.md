@@ -58,9 +58,9 @@ accepted text change. See [startup measurements and limits](docs/STARTUP_PERFORM
 ### Config + CLI
 Supported flags: `--menu-id/-m`, `--initial-query/-q`, `--search-method/-s`, `--preserve-order/-o`, `--no-levenshtein-fallback`, `--auto-accept`, `--terminal`, `--follow-stdin`, `--ipc-only`, `--numeric-selection-mode`, `--no-numeric-selection`, `--show-icons`, `--title/-t`, `--prompt/-p`, `--min-width`, `--min-height`, `--max-width`, `--max-height`, `--row-height`, `--field-height`, `--padding`, `--numeric-column-width`, `--icon-column-width`, `--alternate-rows`, `--background-color`, `--list-background-color`, `--field-background-color`, `--text-color`, `--secondary-text-color`, `--selection-color`, `--corner-radius`, `--no-vibrancy`, `--vibrancy=`, `--init-config`, `--render-bench`, `--startup-profile`.
 Environment overrides are listed under [Environment variables](#environment-variables).
-Rounded corners (14pt) and a translucent `hudWindow` vibrancy material are on by default; disable
+Rounded corners (14pt) and a translucent adaptive (`popover`) vibrancy material are on by default; disable
 with `--no-vibrancy` or set `corner_radius`/`vibrancy` in the config file.
-Theme colors accept hex strings like `#RRGGBB` or `#RRGGBBAA` (empty/`none`/`default` keeps system defaults). Size tuning is available via `field_height`, `padding`, and the column width settings.
+Theme colors accept hex strings like `#RRGGBB` or `#RRGGBBAA`. Empty/`none`/`default` (the default for every color) uses dynamic system colors: the selection follows the accent color, text follows Light/Dark mode, and the window switches with the system appearance. Size tuning is available via `field_height`, `padding`, and the column width settings.
 `--auto-accept` fires immediately in classic mode, waits for stdin EOF in `--follow-stdin`, and stays disabled in `--ipc-only` because that stream never naturally closes.
 
 

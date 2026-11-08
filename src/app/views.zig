@@ -12,7 +12,7 @@ const label_optical_offset = objc_helpers.label_optical_offset;
 pub const TextCellStyle = struct {
     identifier: [*:0]const u8,
     font: objc.Object,
-    text_color: ?objc.Object,
+    text_color: objc.Object,
     alignment: c_ulong,
     left_pad: f64,
     right_pad: f64,
@@ -50,10 +50,46 @@ pub fn textCell(table_view: objc.Object, row_height: f64, column_width: f64, sty
     return cell;
 }
 
-pub fn setCellText(cell: objc.Object, text: [*:0]const u8) void {
+pub fn setCellText(cell: objc.Object, text: [*:0]const u8, color: objc.Object) void {
     const label = cell.msgSend(objc.Object, "textField", .{});
     if (label.value == null) return;
     label.msgSend(void, "setStringValue:", .{nsString(text)});
+    label.msgSend(void, "setTextColor:", .{color});
+}
+
+/// Text on the selection fill is white (or the configured text color), so the
+/// two rows whose selected state changed need new colors; cells are not reloaded
+/// for that. Call after any selection change.
+pub fn restyleSelection(app_state: *state.AppState) void {
+    const previous = app_state.styled_selected_row;
+    const current = app_state.model.selectedRow();
+    app_state.styled_selected_row = current;
+    if (previous) |row| restyleRow(app_state, row);
+    if (current) |row| {
+        if (row != previous) restyleRow(app_state, row);
+    }
+}
+
+fn restyleRow(app_state: *state.AppState, row: usize) void {
+    if (row >= app_state.model.filtered.items.len) return;
+    const selected = app_state.model.selectedRow() == row;
+    const palette = app_state.palette;
+    restyleCell(app_state, "index", row, if (selected) palette.selected_secondary else palette.secondary);
+    restyleCell(app_state, "items", row, if (selected) palette.selected_text else palette.text);
+}
+
+fn restyleCell(app_state: *state.AppState, identifier: [*:0]const u8, row: usize, color: objc.Object) void {
+    const column = app_state.table_view.msgSend(c_long, "columnWithIdentifier:", .{nsString(identifier)});
+    if (column < 0) return;
+    const cell = app_state.table_view.msgSend(objc.Object, "viewAtColumn:row:makeIfNecessary:", .{
+        column,
+        @as(c_long, @intCast(row)),
+        false,
+    });
+    if (cell.value == null) return;
+    const label = cell.msgSend(objc.Object, "textField", .{});
+    if (label.value == null) return;
+    label.msgSend(void, "setTextColor:", .{color});
 }
 
 /// An icon-only cell view. Reuses the image view across dequeues.
@@ -95,9 +131,7 @@ fn makeLabel(row_height: f64, column_width: f64, style: TextCellStyle) objc.Obje
     label.msgSend(void, "setDrawsBackground:", .{false});
     label.msgSend(void, "setAlignment:", .{style.alignment});
     label.msgSend(void, "setFont:", .{style.font});
-    if (style.text_color) |color| {
-        label.msgSend(void, "setTextColor:", .{color});
-    }
+    label.msgSend(void, "setTextColor:", .{style.text_color});
     label.msgSend(void, "setLineBreakMode:", .{@as(c_ulong, 2)}); // truncating tail
     // width flexible, height fixed
     label.msgSend(void, "setAutoresizingMask:", .{@as(c_ulong, 2)});
@@ -126,12 +160,13 @@ fn makeImageView(row_height: f64, column_width: f64) objc.Object {
     return image_view;
 }
 
-/// Custom NSTableRowView drawing, so `selection_color` and hover both apply.
-/// When no selection color is configured it falls back to the system highlight.
+/// Custom NSTableRowView drawing, so the selection fill (`selection_color`, else
+/// the system selection color) and hover both apply.
 pub fn rowViewDrawSelectionInRect(target: objc.c.id, sel: objc.c.SEL, dirty_rect: NSRect) callconv(.c) void {
+    _ = target;
     _ = sel;
-    if (paintSelection(dirty_rect)) return;
-    drawSystemSelection(target, dirty_rect);
+    const app_state = state.g_state orelse return;
+    _ = paintRowFill(dirty_rect, app_state.palette.selection_fill);
 }
 
 /// Paints the hover fill under the pointer. Selection wins, so a selected row
@@ -156,24 +191,11 @@ pub fn rowViewDrawBackgroundInRect(target: objc.c.id, sel: objc.c.SEL, dirty_rec
     _ = paintRowFill(dirty_rect, color);
 }
 
-/// Draws the configured rounded selection fill. Returns false when there is no
-/// color to paint, so callers can fall back to AppKit.
-fn paintSelection(dirty_rect: NSRect) bool {
-    const app_state = state.g_state orelse return false;
-    const color = app_state.config.selection_color orelse return false;
-    return paintRowFill(dirty_rect, nsColor(color));
-}
-
-/// Pointer hover is a muted version of the selection color, or a faint neutral
-/// fill when selection falls back to the system highlight.
+/// Pointer hover is a muted version of the selection color, or a faint
+/// neutral fill when the selection uses the system color.
 fn hoverFillColor() ?objc.Object {
     const app_state = state.g_state orelse return null;
-    if (app_state.config.selection_color) |color| {
-        var muted = color;
-        muted.a *= 0.22;
-        return nsColor(muted);
-    }
-    return nsColor(.{ .r = 1.0, .g = 1.0, .b = 1.0, .a = 0.07 });
+    return app_state.palette.hover_fill;
 }
 
 fn paintRowFill(dirty_rect: NSRect, color: objc.Object) bool {
@@ -228,12 +250,6 @@ fn redrawRow(app_state: *state.AppState, row: usize) void {
     });
     if (row_view.value == null) return;
     row_view.msgSend(void, "setNeedsDisplay:", .{true});
-}
-
-fn drawSystemSelection(target: objc.c.id, dirty_rect: NSRect) void {
-    if (target == null) return;
-    const NSTableRowView = objc.getClass("NSTableRowView").?;
-    objc.Object.fromId(target).msgSendSuper(NSTableRowView, void, "drawSelectionInRect:", .{dirty_rect});
 }
 
 fn rowViewClass() objc.Class {

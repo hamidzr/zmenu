@@ -8,6 +8,7 @@ const pid = @import("../pid.zig");
 const time_compat = @import("../time_compat.zig");
 const objc_helpers = @import("objc_helpers.zig");
 const state = @import("state.zig");
+const views = @import("views.zig");
 
 const stream_close_auto_accept_delay_ms: i64 = 150;
 
@@ -30,6 +31,7 @@ pub fn quit(app_state: *state.AppState, code: u8) noreturn {
 pub fn updateSelection(app_state: *state.AppState) void {
     const row = app_state.model.selectedRow() orelse {
         app_state.table_view.msgSend(void, "deselectAll:", .{@as(objc.c.id, null)});
+        views.restyleSelection(app_state);
         return;
     };
 
@@ -37,6 +39,7 @@ pub fn updateSelection(app_state: *state.AppState) void {
     const index_set = NSIndexSet.msgSend(objc.Object, "indexSetWithIndex:", .{@as(c_ulong, @intCast(row))});
     app_state.table_view.msgSend(void, "selectRowIndexes:byExtendingSelection:", .{ index_set, false });
     app_state.table_view.msgSend(void, "scrollRowToVisible:", .{@as(c_long, @intCast(row))});
+    views.restyleSelection(app_state);
 }
 
 pub fn updateMatchLabel(app_state: *state.AppState) void {

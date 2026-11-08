@@ -216,16 +216,18 @@ pub fn tableViewViewForTableColumn(
         const cell = views.textCell(table_view, row_height, column_width, .{
             .identifier = "zmenuIndexCell",
             .font = app_state.row_font,
-            .text_color = app_state.index_text_color,
+            .text_color = app_state.palette.secondary,
             .alignment = 0,
             .left_pad = 10.0,
             .right_pad = 2.0,
         });
+        const selected = app_state.model.selectedRow() == row_index;
+        const hint_color = if (selected) app_state.palette.selected_secondary else app_state.palette.secondary;
         const query = logic.currentQuery(app_state);
         if (app_state.config.numericSelectionEnabled(app_state.model.filtered.items.len, query) and row_index < state.digit_labels.len) {
-            views.setCellText(cell, state.digit_labels[row_index]);
+            views.setCellText(cell, state.digit_labels[row_index], hint_color);
         } else {
-            views.setCellText(cell, "");
+            views.setCellText(cell, "", hint_color);
         }
         return cell.value;
     }
@@ -240,14 +242,16 @@ pub fn tableViewViewForTableColumn(
     const cell = views.textCell(table_view, row_height, column_width, .{
         .identifier = "zmenuItemCell",
         .font = app_state.row_font,
-        .text_color = app_state.item_text_color,
+        .text_color = app_state.palette.text,
         .alignment = 0,
         // text sits inside the rounded selection fill, which starts 4pt in
         .left_pad = if (app_state.config.hasNumericSelectionColumn() or app_state.config.show_icons) 6.0 else 12.0,
         .right_pad = 6.0,
     });
     const item_index = app_state.model.filtered.items[row_index];
-    views.setCellText(cell, app_state.model.items[item_index].label);
+    const selected = app_state.model.selectedRow() == row_index;
+    const color = if (selected) app_state.palette.selected_text else app_state.palette.text;
+    views.setCellText(cell, app_state.model.items[item_index].label, color);
     return cell.value;
 }
 
@@ -302,6 +306,7 @@ pub fn tableViewSelectionDidChange(target: objc.c.id, sel: objc.c.SEL, notificat
     const notification_obj = objc.Object.fromId(notification);
     const table = notification_obj.msgSend(objc.Object, "object", .{});
     syncSelectedRow(app_state, table.msgSend(c_long, "selectedRow", .{}));
+    views.restyleSelection(app_state);
 }
 
 /// mirror a table row into the model, clearing it when out of range

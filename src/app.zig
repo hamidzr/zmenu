@@ -3,12 +3,14 @@ const objc = @import("objc");
 const appconfig = @import("config.zig");
 const cache = @import("cache.zig");
 const callbacks = @import("app/callbacks.zig");
+const chrome = @import("app/chrome.zig");
 const classes = @import("app/classes.zig");
 const layout = @import("layout.zig");
 const logic = @import("app/logic.zig");
 const placement = @import("app/placement.zig");
 const objc_helpers = @import("app/objc_helpers.zig");
 const state = @import("app/state.zig");
+const theme = @import("app/theme.zig");
 const snapshot = @import("app/snapshot.zig");
 const updates = @import("app/updates.zig");
 const menu = @import("menu.zig");
@@ -168,14 +170,14 @@ pub fn run(cli_config: appconfig.Config) !void {
         window.msgSend(void, "setBackgroundColor:", .{nsColor(color)});
     }
 
-    // subtle border and rounded corners on the content layer
+    // subtle border and rounded corners on the content layer; the content view
+    // re-resolves the dynamic border color when the appearance changes
     window.msgSend(void, "setHasShadow:", .{true});
-    const content_view = window.msgSend(objc.Object, "contentView", .{});
+    const content_view = chrome.makeContentView(window_rect);
+    window.msgSend(void, "setContentView:", .{content_view});
     content_view.msgSend(void, "setWantsLayer:", .{true});
     const layer = content_view.msgSend(objc.Object, "layer", .{});
-    const border_color = nsColor(.{ .r = 1.0, .g = 1.0, .b = 1.0, .a = 0.1 });
-    const cg_color = border_color.msgSend(objc.c.id, "CGColor", .{});
-    layer.msgSend(void, "setBorderColor:", .{cg_color});
+    chrome.updateBorder(content_view);
     layer.msgSend(void, "setBorderWidth:", .{@as(f64, 1.0)});
     layer.msgSend(void, "setCornerRadius:", .{config.corner_radius});
     layer.msgSend(void, "setMasksToBounds:", .{config.corner_radius > 0.0});
@@ -189,7 +191,8 @@ pub fn run(cli_config: appconfig.Config) !void {
         };
         const effect = NSVisualEffectView.msgSend(objc.Object, "alloc", .{})
             .msgSend(objc.Object, "initWithFrame:", .{effect_rect});
-        effect.msgSend(void, "setMaterial:", .{@as(c_long, 13)}); // NSVisualEffectMaterialHUDWindow
+        // adaptive material: HUDWindow (13) is always dark
+        effect.msgSend(void, "setMaterial:", .{@as(c_long, 6)}); // NSVisualEffectMaterialPopover
         effect.msgSend(void, "setBlendingMode:", .{@as(c_long, 0)}); // NSVisualEffectBlendingModeBehindWindow
         effect.msgSend(void, "setState:", .{@as(c_long, 1)}); // NSVisualEffectStateActive
         effect.msgSend(void, "setAutoresizingMask:", .{@as(c_ulong, 18)}); // width | height
@@ -205,6 +208,7 @@ pub fn run(cli_config: appconfig.Config) !void {
 
     const search_font = nsFont(clamp(config.field_height * 0.48, 15.0, 21.0));
     const counter_font = objc_helpers.nsFontMonospacedDigit(clamp(config.field_height * 0.32, 12.0, 14.0), font_weight_medium);
+    const palette = theme.palette(config);
     const text_color = if (config.text_color) |color| nsColor(color) else null;
     const secondary_text_color = if (config.secondary_text_color) |color| nsColor(color) else null;
 
@@ -292,9 +296,7 @@ pub fn run(cli_config: appconfig.Config) !void {
     match_label.msgSend(void, "setEditable:", .{false});
     match_label.msgSend(void, "setSelectable:", .{false});
     match_label.msgSend(void, "setAlignment:", .{@as(c_int, 2)});
-    if (secondary_text_color) |color| {
-        match_label.msgSend(void, "setTextColor:", .{color});
-    }
+    match_label.msgSend(void, "setTextColor:", .{palette.secondary});
     match_label.msgSend(void, "setFont:", .{counter_font});
 
     const table_frame = NSRect{
@@ -385,17 +387,9 @@ pub fn run(cli_config: appconfig.Config) !void {
     });
 
     content_view.msgSend(void, "addSubview:", .{scroll_view});
-    if (config.field_background_color) |color| {
-        const NSView = objc.getClass("NSView").?;
-        const field_bg = NSView.msgSend(objc.Object, "alloc", .{})
-            .msgSend(objc.Object, "initWithFrame:", .{field_bg_rect});
-        field_bg.msgSend(void, "setAutoresizingMask:", .{ns_view_min_y_margin});
-        field_bg.msgSend(void, "setWantsLayer:", .{true});
-        const bg_layer = field_bg.msgSend(objc.Object, "layer", .{});
-        bg_layer.msgSend(void, "setBackgroundColor:", .{nsColor(color).msgSend(objc.c.id, "CGColor", .{})});
-        bg_layer.msgSend(void, "setCornerRadius:", .{@as(f64, 8.0)});
-        content_view.msgSend(void, "addSubview:", .{field_bg});
-    }
+    const field_bg = chrome.makeFieldBackground(field_bg_rect);
+    field_bg.msgSend(void, "setAutoresizingMask:", .{ns_view_min_y_margin});
+    content_view.msgSend(void, "addSubview:", .{field_bg});
     content_view.msgSend(void, "addSubview:", .{text_field});
     if (match_label_width > 0) {
         content_view.msgSend(void, "addSubview:", .{match_label});
@@ -417,8 +411,7 @@ pub fn run(cli_config: appconfig.Config) !void {
         .handler = handler,
         .row_font = table_font,
         .counter_font = counter_font,
-        .item_text_color = text_color,
-        .index_text_color = secondary_text_color,
+        .palette = palette,
         .config = config,
         .metrics = metrics,
         .pid_path = pid_path,
