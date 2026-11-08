@@ -6,6 +6,7 @@ const callbacks = @import("app/callbacks.zig");
 const classes = @import("app/classes.zig");
 const layout = @import("layout.zig");
 const logic = @import("app/logic.zig");
+const placement = @import("app/placement.zig");
 const objc_helpers = @import("app/objc_helpers.zig");
 const state = @import("app/state.zig");
 const snapshot = @import("app/snapshot.zig");
@@ -468,8 +469,8 @@ pub fn run(cli_config: appconfig.Config) !void {
         logic.maybeAutoAccept(&app_state, .initial);
     }
 
-    // size to the first results before the window is shown
-    logic.fitWindow(&app_state);
+    // the initial filter already sized the window; place it from that height
+    if (snap == null) placement.placeOnPointerScreen(window, metrics.windowHeight(metrics.max_rows));
     time_compat.startupStage("initial_filter");
     if (config.auto_accept) activateApp(app);
     window.msgSend(void, "setAcceptsMouseMovedEvents:", .{true});
