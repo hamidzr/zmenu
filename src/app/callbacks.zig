@@ -278,8 +278,7 @@ pub fn tableViewViewForTableColumn(
         });
         const selected = model.selectedRow() == row_index;
         const hint_color = if (selected) app_state.palette.selected_secondary else app_state.palette.secondary;
-        const query = logic.currentQuery(app_state);
-        if (app_state.config.numericSelectionEnabled(model.rowCount(), query) and row_index < state.digit_labels.len) {
+        if (app_state.config.commandShortcutsEnabled() and row_index < state.digit_labels.len) {
             views.setCellText(cell, state.digit_labels[row_index], hint_color);
         } else {
             views.setCellText(cell, "", hint_color);
@@ -675,13 +674,8 @@ fn eventChar(event_id: objc.c.id) ?EventChar {
 }
 
 fn handleNumericShortcut(app_state: *state.AppState, ch: u8) bool {
-    const query = logic.currentQuery(app_state);
-    return handleNumericShortcutWithQuery(app_state, ch, query);
-}
-
-fn handleNumericShortcutWithQuery(app_state: *state.AppState, ch: u8, query_for_mode: []const u8) bool {
     const model = app_state.view();
-    if (!app_state.config.numericSelectionEnabled(model.rowCount(), query_for_mode)) return false;
+    if (!app_state.config.commandShortcutsEnabled()) return false;
     if (ch < '1' or ch > '9') return false;
 
     const index: usize = @intCast(ch - '1');

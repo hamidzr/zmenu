@@ -28,7 +28,7 @@ Ctrl+N/P/J/K are also taken in `performKeyEquivalent:` on `ZigSearchField` (exac
 Every selection movement sets `Model.moved`, which makes the selection stick to its item across IPC `set` updates (see `Model.applyFilterKeepSelection`). A query change clears it.
 
 ## Cmd+digit shortcuts
-Cmd+1 to Cmd+9 accept the matching row (handled in `performKeyEquivalent:` on `ZigSearchField`), subject to `numeric_selection_mode`: `auto` is active for at most nine results and while the query does not end in a digit. The index column shows `Cmd+N` for the first nine rows; its width is reserved whenever the mode is not `off`, and the cells are blank while shortcuts are inactive.
+Cmd+1 to Cmd+9 accept the matching row (handled in `performKeyEquivalent:` on `ZigSearchField`), unless `numeric_selection_mode` is `off`. Command chords never collide with typing, so in the GUI `auto` behaves like `on`; the nine-result and trailing-digit rules apply only to terminal mode, where plain digits select. The index column shows `Cmd+N` for the first nine rows and is hidden when the mode is `off`.
 
 ## Modifier+Enter, Cmd+K and Esc with actions
 Modified Return reaches the app by three routes, all funnelled into one accept:

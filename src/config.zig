@@ -69,10 +69,23 @@ pub const Config = struct {
         return self.numeric_selection_mode != .off;
     }
 
-    pub fn numericSelectionEnabled(self: Config, filtered_count: usize, query: []const u8) bool {
-        return numericSelectionEnabledForMode(self.numeric_selection_mode, filtered_count, query);
+    /// GUI shortcuts are Cmd+digit, which never collide with typing, so `auto`
+    /// behaves like `on` there; the count and trailing-digit rules only apply to
+    /// terminal mode, where plain digits select
+    pub fn commandShortcutsEnabled(self: Config) bool {
+        return self.numeric_selection_mode != .off;
     }
 };
+
+test "gui command shortcuts are on unless the mode is off" {
+    var config = defaults();
+    config.numeric_selection_mode = .auto;
+    try std.testing.expect(config.commandShortcutsEnabled());
+    config.numeric_selection_mode = .on;
+    try std.testing.expect(config.commandShortcutsEnabled());
+    config.numeric_selection_mode = .off;
+    try std.testing.expect(!config.commandShortcutsEnabled());
+}
 
 pub fn defaults() Config {
     return .{
