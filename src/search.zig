@@ -1,7 +1,12 @@
 const std = @import("std");
 const fuzzy = @import("search/fuzzy.zig");
 const levenshtein = @import("search/levenshtein.zig");
+const rank = @import("search/rank.zig");
 const types = @import("search/types.zig");
+
+test {
+    _ = rank;
+}
 
 pub const SearchMethod = types.SearchMethod;
 pub const Options = types.Options;
@@ -25,7 +30,7 @@ pub fn filterIndices(
     } else {
         switch (opts.method) {
             .direct => fuzzy.directSearch(labels, query, matches),
-            .fuzzy, .default => fuzzy.fuzzyTokenSearch(labels, trimmed, 2, matches, out_indices),
+            .fuzzy, .default => fuzzy.fuzzyTokenSearch(labels, trimmed, matches),
             .fuzzy3 => fuzzy.fuzzySearchBrute(labels, query, 2, matches),
             .fuzzy1 => fuzzy.fuzzyScoreSearch(labels, query, opts.preserve_order, matches),
         }
@@ -37,8 +42,6 @@ pub fn filterIndices(
         if (opts.preserve_order) {
             std.sort.insertion(Match, matches.items, {}, fuzzy.indexAsc);
         }
-        // token search borrows out_indices as scratch
-        out_indices.clearRetainingCapacity();
     }
 
     for (matches.items[0..effectiveLimit(opts.limit, matches.items.len)]) |match| {
@@ -228,4 +231,52 @@ test "fuzzy ranks direct substring above subsequence match" {
 
     filterIndices(labels[0..], "today", .{ .method = .fuzzy, .levenshtein_fallback = true }, &matches, &out);
     try std.testing.expectEqualSlices(usize, &[_]usize{ 1, 0 }, out.items);
+}
+
+fn expectOrder(labels: []const []const u8, query: []const u8, expected: []const usize) !void {
+    var matches = std.ArrayList(Match).empty;
+    var out = std.ArrayList(usize).empty;
+    defer matches.deinit(std.testing.allocator);
+    defer out.deinit(std.testing.allocator);
+    try matches.ensureTotalCapacity(std.testing.allocator, labels.len);
+    try out.ensureTotalCapacity(std.testing.allocator, labels.len);
+
+    filterIndices(labels, query, .{ .method = .fuzzy, .levenshtein_fallback = false }, &matches, &out);
+    try std.testing.expectEqualSlices(usize, expected, out.items);
+}
+
+test "fuzzy ranks acronym vsc first" {
+    const labels = [_][]const u8{ "Preview scratch", "Visual Studio Code", "Vivaldi", "Discover screencast" };
+    try expectOrder(&labels, "vsc", &.{ 1, 0, 3 });
+}
+
+test "fuzzy ranks label prefix above later word start" {
+    const labels = [_][]const u8{ "Dash - safari docs", "Safari", "Unsafe mode" };
+    try expectOrder(&labels, "saf", &.{ 1, 0, 2 });
+}
+
+test "fuzzy multi-token scores sum across tokens" {
+    const labels = [_][]const u8{
+        "xchrome xdev",
+        "Notes: chromium dev notes",
+        "Google Chrome",
+        "Chrome Canary - dev tools",
+    };
+    // prefix + word start > two word starts > two mid-word hits; Google Chrome lacks "dev"
+    try expectOrder(&labels, "chr dev", &.{ 3, 1, 0 });
+}
+
+test "fuzzy ties keep input order" {
+    const labels = [_][]const u8{ "Zebra app", "Alpha app", "Mango app" };
+    try expectOrder(&labels, "app", &.{ 0, 1, 2 });
+}
+
+test "fuzzy empty query keeps input order" {
+    const labels = [_][]const u8{ "c", "a", "b" };
+    try expectOrder(&labels, "  ", &.{ 0, 1, 2 });
+}
+
+test "fuzzy substring beats scattered subsequence regardless of order" {
+    const labels = [_][]const u8{ "to d a y", "today.md" };
+    try expectOrder(&labels, "today", &.{ 1, 0 });
 }

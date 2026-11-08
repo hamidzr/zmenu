@@ -1,4 +1,5 @@
 const std = @import("std");
+const rank = @import("rank.zig");
 const score = @import("score.zig");
 const types = @import("types.zig");
 const util = @import("util.zig");
@@ -11,37 +12,24 @@ pub fn directSearch(labels: []const []const u8, query: []const u8, matches: *std
     }
 }
 
+/// Every space-separated token must match; token scores add up. Higher
+/// scores first, ties keep label order (the client order carries recency).
 pub fn fuzzyTokenSearch(
     labels: []const []const u8,
     query: []const u8,
-    min_consecutive: usize,
     matches: *std.ArrayList(types.Match),
-    scratch_indices: *std.ArrayList(usize),
 ) void {
-    scratch_indices.clearRetainingCapacity();
-    for (labels, 0..) |_, idx| {
-        scratch_indices.appendAssumeCapacity(idx);
-    }
-
-    var tokens = std.mem.splitScalar(u8, query, ' ');
-    var saw_token = false;
-    while (tokens.next()) |token| {
-        if (token.len == 0) continue;
-        saw_token = true;
-        fuzzySearchBruteOnIndices(labels, scratch_indices.items, token, min_consecutive, matches);
-        scratch_indices.clearRetainingCapacity();
-        for (matches.items) |match| {
-            scratch_indices.appendAssumeCapacity(match.index);
+    matches.clearRetainingCapacity();
+    outer: for (labels, 0..) |label, idx| {
+        var total: i32 = 0;
+        var tokens = std.mem.splitScalar(u8, query, ' ');
+        while (tokens.next()) |token| {
+            if (token.len == 0) continue;
+            total +|= rank.tokenScore(token, label) orelse continue :outer;
         }
-        if (scratch_indices.items.len == 0) return;
+        matches.appendAssumeCapacity(.{ .index = idx, .score = total });
     }
-
-    if (!saw_token) {
-        matches.clearRetainingCapacity();
-        for (labels, 0..) |_, idx| {
-            matches.appendAssumeCapacity(.{ .index = idx, .score = 0 });
-        }
-    }
+    std.mem.sort(types.Match, matches.items, {}, scoreDescIndexAsc);
 }
 
 pub fn fuzzySearchBrute(
