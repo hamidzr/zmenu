@@ -10,7 +10,7 @@ Native macOS AppKit MVP for the gmenu replacement (zmenu).
 - While a streaming source (`--ipc-only`, `--follow-stdin`) has sent nothing yet the list shows a dim "Loading..." line; a query with no matches shows "No results". Neither is a row, so nothing is selectable, counted or acceptable.
 - Up/Down/Tab/Shift+Tab, Ctrl+N/P and Ctrl+J/K move the selection (wrapping). PageUp/PageDown move a page; Cmd+Up/Cmd+Down jump to the first/last item; Home/End do the same while the query is empty.
 - Double-clicking a row accepts that item.
-- Keys 1-9 accept the corresponding item when numeric selection is active.
+- Cmd+1 to Cmd+9 accept the corresponding item when numeric selection is active; the first nine rows show a dim command-key hint (the command symbol plus the digit), and the hint column keeps its width when hints are inactive.
 - Ctrl+L clears the query.
 - A pid file in the temp dir prevents multiple instances per menu id.
 - When `menu_id` is set, the last query + selection are stored under `~/.cache/gmenu/<menu_id>/cache.yaml`. Cache dir is created 0700 and cache.yaml / pid files 0600.
@@ -137,7 +137,7 @@ Example stdout:
 - Search methods supported: `direct`, `fuzzy`, `fuzzy1`, `fuzzy3`, `default` (`default` matches `fuzzy`). Regex or `exact` modes are not implemented.
 - The config filename is `config.yaml` in the standard gmenu config locations; `gmenu.yaml` is not read.
 - Default window bounds are `800x450` with max `1920x1080` (override via config/env/flags).
-- Default row height is `34`, field height `44`, icon column `46`, numeric column `30`; tune via
+- Default row height is `34`, field height `44`, icon column `46`, numeric column `40`; tune via
   `row_height`, `field_height`, `icon_column_width`, and `numeric_column_width`.
 - Default `selection_color` is an accent blue that stays visible under vibrancy; set it to an empty
   string to fall back to the system selection highlight.
@@ -145,7 +145,7 @@ Example stdout:
 ### Migration from Go gmenu
 - Copy your existing `config.yaml` into the same gmenu config locations; ensure `search_method` is one of the supported values above.
 - If you previously used `exact` or `regex`, switch to `direct` or `fuzzy` since zmenu does not implement regex search.
-- Numeric selection defaults to `numeric_selection_mode: auto`, which enables 1-9 hints only when filtered results are `<= 9`.
+- Numeric selection defaults to `numeric_selection_mode: auto`, which enables Cmd+1..9 hints only when filtered results are `<= 9`.
 - Set `numeric_selection_mode: on` to always enable numeric shortcuts, or `off` to always disable them.
 - `no_numeric_selection` and `GMENU_NO_NUMERIC_SELECTION` are still supported as legacy on/off aliases.
 - Terminal mode is intentionally minimal and chooses the first match on Enter.

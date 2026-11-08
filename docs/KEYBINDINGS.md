@@ -20,3 +20,6 @@ AppKit does not always route Cmd+A through `keyDown:` for the search field. In t
 Ctrl+N/P/J/K are also taken in `performKeyEquivalent:` on `ZigSearchField` (exact Ctrl modifier only), so Ctrl+J/Ctrl+K move down/up unconditionally and Ctrl+K never deletes to end of line.
 
 Every selection movement sets `Model.moved`, which makes the selection stick to its item across IPC `set` updates (see `Model.applyFilterKeepSelection`). A query change clears it.
+
+## Cmd+digit shortcuts
+Cmd+1 to Cmd+9 accept the matching row (handled in `performKeyEquivalent:` on `ZigSearchField`), subject to `numeric_selection_mode`: `auto` is active for at most nine results and while the query does not end in a digit. The index column shows `Cmd+N` for the first nine rows; its width is reserved whenever the mode is not `off`, and the cells are blank while shortcuts are inactive.

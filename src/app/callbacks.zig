@@ -215,7 +215,7 @@ pub fn tableViewViewForTableColumn(
     if (columnIsIndex(column_obj)) {
         const cell = views.textCell(table_view, row_height, column_width, .{
             .identifier = "zmenuIndexCell",
-            .font = app_state.row_font,
+            .font = app_state.hint_font,
             .text_color = app_state.palette.secondary,
             .alignment = 0,
             .left_pad = 10.0,

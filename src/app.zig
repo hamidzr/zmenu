@@ -28,6 +28,7 @@ const nsFont = objc_helpers.nsFont;
 const nsFontWeight = objc_helpers.nsFontWeight;
 const lineHeight = objc_helpers.lineHeight;
 const font_weight_medium = objc_helpers.font_weight_medium;
+const font_weight_regular = objc_helpers.font_weight_regular;
 const applyPlaceholderColor = objc_helpers.applyPlaceholderColor;
 const scheduleTimer = objc_helpers.scheduleTimer;
 
@@ -347,9 +348,8 @@ pub fn run(cli_config: appconfig.Config) !void {
     table_view.msgSend(void, "setColumnAutoresizingStyle:", .{@as(c_ulong, 1)}); // NSTableViewLastColumnOnlyAutoresizingStyle
 
     const NSTableColumn = objc.getClass("NSTableColumn").?;
-    var index_column: ?objc.Object = null;
     if (config.hasNumericSelectionColumn()) {
-        index_column = addFixedColumn(table_view, "index", numeric_width);
+        _ = addFixedColumn(table_view, "index", numeric_width);
     }
     if (config.show_icons) {
         _ = addFixedColumn(table_view, "icon", icon_width);
@@ -428,13 +428,13 @@ pub fn run(cli_config: appconfig.Config) !void {
         .window = window,
         .content_view = content_view,
         .table_view = table_view,
-        .index_column = index_column,
         .text_field = text_field,
         .match_label = match_label,
         .message_label = message_label,
         .handler = handler,
         .row_font = table_font,
         .counter_font = counter_font,
+        .hint_font = objc_helpers.nsFontMonospacedDigit(clamp(config.row_height * 0.36, 11.0, 13.0), font_weight_regular),
         .palette = palette,
         .config = config,
         .metrics = metrics,

@@ -12,13 +12,13 @@ pub const AppState = struct {
     window: objc.Object,
     content_view: objc.Object,
     table_view: objc.Object,
-    index_column: ?objc.Object,
     text_field: objc.Object,
     match_label: objc.Object,
     message_label: objc.Object,
     handler: objc.Object,
     row_font: objc.Object,
     counter_font: objc.Object,
+    hint_font: objc.Object,
     palette: theme.Palette,
     /// row last styled as selected, so a selection change restyles just two rows
     styled_selected_row: ?usize = null,
@@ -38,6 +38,9 @@ pub const AppState = struct {
     hovered_row: ?usize,
 };
 
-pub const digit_labels = [_][:0]const u8{ "1", "2", "3", "4", "5", "6", "7", "8", "9" };
+/// Cmd+digit hints; the shortcut is Cmd+1 .. Cmd+9, not the bare digit
+pub const digit_labels = [_][:0]const u8{
+    "\u{2318}1", "\u{2318}2", "\u{2318}3", "\u{2318}4", "\u{2318}5", "\u{2318}6", "\u{2318}7", "\u{2318}8", "\u{2318}9",
+};
 
 pub var g_state: ?*AppState = null;

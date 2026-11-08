@@ -75,10 +75,8 @@ fn refreshView(app_state: *state.AppState, query: []const u8) void {
         query,
     );
     fitWindow(app_state);
-    if (app_state.index_column) |index_column| {
-        const enabled = app_state.config.numericSelectionEnabled(app_state.model.filtered.items.len, query);
-        index_column.msgSend(void, "setHidden:", .{!enabled});
-    }
+    // the hint column keeps its width whether or not hints are active, so the
+    // text does not shift; reloading rewrites the hint cells
     app_state.table_view.msgSend(void, "reloadData", .{});
     updateSelection(app_state);
     updateMatchLabel(app_state);

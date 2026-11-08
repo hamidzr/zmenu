@@ -99,7 +99,7 @@ pub fn defaults() Config {
         .field_height = 44,
         .padding = 14,
         .numeric_selection_mode = .auto,
-        .numeric_column_width = 30,
+        .numeric_column_width = 40,
         .show_icons = false,
         .icon_column_width = 46,
         .row_height = 34,
