@@ -1,4 +1,4 @@
-# zmenu IPC protocol (v2)
+# zmenu IPC protocol (v3)
 
 zmenu listens on a local Unix domain socket and accepts framed JSON messages.
 The API is intended for updating the in-memory item list while the GUI is
@@ -27,21 +27,57 @@ Where `<length>` is the decimal byte count of the JSON payload.
 
 ```json
 {
-  "v": 2,
+  "v": 3,
   "cmd": "set" | "append" | "prepend",
+  "loading": true,
+  "scopes": [ { "prefix": "t", "kind": "tab", "label": "Tabs" } ],
   "items": [
     { "id": "item-id", "label": "Item label", "icon": "/Applications/App.app" }
   ]
 }
 ```
 
-- `v` is the protocol version (currently `2`).
+Version 3 is a superset of version 2. zmenu accepts both; every v3 field is optional, so a v2 client keeps working unchanged. Clients send `"v": 3` when they use the new fields.
+
+### Message fields
+
+- `v` is the protocol version (currently `3`).
 - `cmd` determines how items are applied.
-- `items` is required for `set`, `append`, and `prepend`.
-- `id` is a stable identifier string (recommended for IPC-only mode).
+- `items` is required for `set`, `append`, and `prepend`, unless the message carries `loading` or `scopes`. An items-less message with neither is ignored.
+- `loading`: `true` means the client will send more updates. zmenu shows a small spinner left of the counter, and an empty list reads "Loading..." instead of "No results". Absent means `false`: every message sets the flag, so the next message without `loading: true` hides the spinner. The initial "Loading..." overlay before the first update is separate and always shown.
+- `scopes`: list of search scopes (below). When present it replaces the previous list; when absent the previous list stays.
+
+### Item fields
+
+- `id` is a stable identifier string (recommended for IPC-only mode). It keeps the selection on the same item across updates.
 - `label` is required.
 - `icon` is optional. An absolute file or app bundle path displays the macOS workspace icon for that path; image files (`.png`, `.ico`, `.svg`, `.jpg`, `.gif`, `.webp`, `.icns`, ...) display their own contents. An absent, empty, relative, or missing path displays a blank icon cell.
+- `subtitle`: dim text drawn after the label on the same row, separated by two spaces. It is tail-truncated before the label is. It is searched as if appended to the label and highlighted.
+- `detail`: short right-aligned dim text (for example "Space 3", "5m", "Tab"). At most about 30% of the row width, tail-truncated. Not searched.
+- `keywords`: searched, never shown.
+- `kind`: item category used by scopes (for example `window`, `tab`, `app`, `tmux`, `t3`, `file`, `setting`, `action`, `uri`, `clipboard`, `ext`, `status`, `search`, `calc`).
+- `prefix`, `fallback`, `calc`: template items (below).
+- `action`, `actions`, `confirm`: accepted and preserved in the stored payload, but not acted on yet. They are reserved for the action panel: `action` labels the plain-Enter action, `actions` is a list of `{ "mods": "cmd", "label": "...", "confirm": "..." }` alternates (`mods` is the canonical `+`-joined subset in the order ctrl, alt, shift, cmd), `confirm` is a string or `true`.
 - Extra fields on item objects are preserved for IPC-only output.
+
+Matching: label, subtitle and keywords are searched. A label hit scores higher than a subtitle hit, which scores higher than a keywords hit, so "safari" ranks the Safari app above a tab whose subtitle mentions safari. Highlights cover the label and the subtitle only.
+
+### Template items
+
+Template items never take part in fuzzy matching and are not counted in the "n / total" counter. Their rows are normal rows for selection, the number shortcuts and keyboard navigation.
+
+- `"prefix": "g "`: hidden unless the query starts with the prefix (ASCII case-insensitive). Then it is pinned above the regular matches, with `{q}` in the label and subtitle replaced by the query after the prefix, leading spaces trimmed.
+- `"fallback": true`: shown only when the query is non-empty and no regular item matches. `{q}` is the full query. Fallbacks keep the supplied order.
+- `"calc": true`: shown pinned at the very top when the whole query is an arithmetic expression with at least one binary operator (or parentheses around an operation) that evaluates to a finite number. `{q}` is the query and `{result}` the formatted result.
+  - Grammar: numbers (digits, optional `.`, optional `_` digit separators), `+ - * / %` (modulo), `^` (power, right-associative, so `-2^2` is `-4`), unary minus and plus, parentheses, whitespace. Queries over 256 bytes are not evaluated.
+  - Division by zero, NaN and infinity: not shown.
+  - Result format: up to 12 significant digits, no trailing zeros, plain notation for `1e-6 <= |x| < 1e15`, otherwise exponent form such as `1.5e20`.
+
+Row order: calc rows, active prefix rows, regular matches, then fallbacks when there is no regular match. "No results" shows only when there are no rows at all.
+
+### Scopes
+
+`{ "prefix": "t", "kind": "tab", "label": "Tabs" }`. When the query starts with the scope prefix followed by one space (prefix compared ASCII case-insensitive), only regular items with `kind == scope.kind` are candidates and the search text is the remainder. The counter reads "Tabs · n / total", where total counts the scope's items. `label` falls back to `kind`. The first matching scope wins, and scopes take precedence over prefix template items with the same leading token. While a scope is active, template items are hidden.
 
 ## Behavior
 
@@ -58,6 +94,14 @@ starts with an empty list. On accept, it prints the full JSON item to stdout on 
 single line, preserving any extra item fields. `--auto-accept` does not fire in
 this mode because the item stream has no EOF. Cancels exit non-zero without
 stdout output.
+
+The stored item object gets these fields added (a same-named key already in the item is replaced, so the injected value wins and no key repeats; values are JSON-escaped):
+
+- `query`: the full raw query text, always.
+- `arg`: template rows only. The prefix remainder for a prefix item, the full query for a fallback, the expression for a calc item.
+- `result`: calc rows only. The formatted result.
+
+The item is re-serialized from parsed JSON, so key order is kept but whitespace is normalized and numbers are printed in `std.json` form (for example `1.0` becomes `1e0`). Send identifiers and other exact values as strings.
 
 ## Size limits
 
@@ -78,4 +122,10 @@ Or raw protocol:
 ```text
 46
 {"v":2,"cmd":"append","items":[{"id":"hi","label":"hi"}]}
+```
+
+A v3 message with a scope, a loading flag and rich rows:
+
+```json
+{"v":3,"cmd":"set","loading":true,"scopes":[{"prefix":"t","kind":"tab","label":"Tabs"}],"items":[{"id":"tab:1","label":"Inbox - Gmail","subtitle":"mail.google.com","detail":"Tab","kind":"tab"},{"id":"g","label":"Search Google for {q}","prefix":"g "}]}
 ```

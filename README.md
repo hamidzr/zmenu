@@ -120,7 +120,7 @@ printf "alpha\nbravo\n" | zmenuctl --menu-id demo set --stdin
 zmenuctl --menu-id demo append "charlie"
 ```
 
-Protocol details live in `IPC_PROTOCOL.md`.
+Protocol v3 adds optional subtitle, detail and keywords text, kinds with search scopes, calc, prefix and fallback template rows, and a loading flag; see `IPC_PROTOCOL.md`.
 
 IPC-only selection mode ignores stdin and prints the full JSON item on accept:
 
