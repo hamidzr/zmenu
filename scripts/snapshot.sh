@@ -10,6 +10,7 @@ ITEMS="$ROOT/samples/snapshot_items.txt"
 IPC="$ROOT/samples/snapshot_ipc.json"
 V3="$ROOT/samples/snapshot_v3.json"
 V3_LOADING="$ROOT/samples/snapshot_v3_loading.json"
+V3_ACTIONS="$ROOT/samples/snapshot_v3_actions.json"
 
 mkdir -p "$OUT"
 rm -f "$OUT"/*.png
@@ -49,4 +50,13 @@ for look in dark light; do
   snap "$look-v3-scope" "$look" "$V3" - --ipc-only --show-icons --initial-query "t gmail"
   snap "$look-v3-search" "$look" "$V3" - --ipc-only --show-icons --initial-query "safari"
   snap "$look-v3-loading" "$look" "$V3_LOADING" - --ipc-only --show-icons
+  # actions: footer hint bar, Cmd+K panel, confirm prompts (rows: window, window, file, app, log out)
+  snap "$look-v3-footer" "$look" "$V3_ACTIONS" - --ipc-only --show-icons
+  snap "$look-v3-footer-file" "$look" "$V3_ACTIONS" 2 --ipc-only --show-icons
+  snap "$look-v3-footer-plain" "$look" "$V3_ACTIONS" 3 --ipc-only --show-icons
+  ZMENU_SNAPSHOT_ACTIONS=1 snap "$look-v3-panel" "$look" "$V3_ACTIONS" - --ipc-only --show-icons
+  ZMENU_SNAPSHOT_ACTIONS=1 ZMENU_SNAPSHOT_ACTIONS_SELECT=2 snap "$look-v3-panel-select" "$look" "$V3_ACTIONS" 2 --ipc-only --show-icons
+  ZMENU_SNAPSHOT_CONFIRM=alt snap "$look-v3-confirm-action" "$look" "$V3_ACTIONS" - --ipc-only --show-icons
+  ZMENU_SNAPSHOT_CONFIRM=1 snap "$look-v3-confirm-item" "$look" "$V3_ACTIONS" 4 --ipc-only --show-icons
+  ZMENU_SNAPSHOT_ACTIONS=1 ZMENU_SNAPSHOT_ACTIONS_SELECT=2 ZMENU_SNAPSHOT_CONFIRM=1 snap "$look-v3-panel-confirm" "$look" "$V3_ACTIONS" - --ipc-only --show-icons
 done

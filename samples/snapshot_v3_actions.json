@@ -1,0 +1,9 @@
+{"v":3,"cmd":"set","items":[
+{"id":"win:1","label":"Inbox - Gmail","subtitle":"Safari","detail":"S2","kind":"window","action":"Switch","actions":[{"mods":"cmd","label":"Close window"},{"mods":"alt","label":"Quit Safari","confirm":"Quit Safari?"}],"icon":"/Applications/Safari.app"},
+{"id":"win:2","label":"zmenu - Terminal","subtitle":"Terminal","detail":"S1","kind":"window","action":"Switch","actions":[{"mods":"cmd","label":"Close window"},{"mods":"alt","label":"Quit Terminal","confirm":true}],"icon":"/System/Applications/Utilities/Terminal.app"},
+{"id":"file:ipc","label":"IPC_PROTOCOL.md","subtitle":"~/projects/zmenu","detail":"2h","kind":"file","action":"Open","actions":[{"mods":"cmd","label":"Reveal in Finder"},{"mods":"alt","label":"Copy path"}],"icon":"/System/Applications/TextEdit.app"},
+{"id":"app:notes","label":"Notes","kind":"app","icon":"/System/Applications/Notes.app"},
+{"id":"sys:logout","label":"Log Out","subtitle":"End this session","detail":"System","kind":"action","action":"Log Out","confirm":true,"icon":"/System/Applications/System Settings.app"},
+{"id":"app:safari","label":"Safari","kind":"app","icon":"/Applications/Safari.app"},
+{"id":"app:terminal","label":"Terminal","kind":"app","icon":"/System/Applications/Utilities/Terminal.app"}
+]}
