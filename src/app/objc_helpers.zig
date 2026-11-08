@@ -125,17 +125,17 @@ pub fn columnIsIcon(column: objc.Object) bool {
     return std.mem.eql(u8, name, "icon");
 }
 
-var icon_cache: std.StringHashMapUnmanaged(?objc.Object) = .{};
+var icon_cache: std.StringHashMapUnmanaged(objc.Object) = .{};
 
 /// Loads and retains the workspace icon for an absolute path, resized once
-/// to the row size so per-draw scaling disappears. Missing and invalid paths
-/// are cached as blank to avoid repeated filesystem checks.
+/// to the row size so per-draw scaling disappears. Misses are not cached: a
+/// stat is cheap, and the daemon may write a favicon after the first paint.
 pub fn iconImage(path: ?[:0]const u8, side: f64) ?objc.Object {
     const icon_path = path orelse return null;
     if (icon_path.len == 0 or !std.fs.path.isAbsolute(icon_path)) return null;
     if (icon_cache.get(icon_path)) |cached| return cached;
 
-    const image = loadIconImage(icon_path, side);
+    const image = loadIconImage(icon_path, side) orelse return null;
     const key = std.heap.c_allocator.dupe(u8, icon_path) catch return image;
     icon_cache.put(std.heap.c_allocator, key, image) catch {
         std.heap.c_allocator.free(key);
