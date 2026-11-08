@@ -13,6 +13,7 @@ Native macOS AppKit MVP for the gmenu replacement (zmenu).
 - Clicking a row accepts that item; the search field keeps keyboard focus.
 - Cmd+1 to Cmd+9 accept the corresponding item when numeric selection is active; the first nine rows show a dim command-key hint (the command symbol plus the digit), and the hint column keeps its width when hints are inactive.
 - Ctrl+L clears the query.
+- IPC items can declare `action` (plain Enter label), `actions` (alternates with `mods`, such as Cmd+Enter) and `confirm`. Cmd/Alt/Shift/Ctrl+Enter accepts only when the selected item has an action with exactly those modifiers (otherwise a beep) and the output gains `mods`. A footer bar lists the Enter action, up to two alternates and `Cmd+K Actions`. Cmd+K opens an action panel for the selected item (Enter runs the chosen row, Esc or Cmd+K goes back). `confirm` needs a second Enter within 4 seconds, with the prompt shown in the row.
 - A pid file in the temp dir prevents multiple instances per menu id.
 - When `menu_id` is set, the last query + selection are stored under `~/.cache/gmenu/<menu_id>/cache.yaml`. Cache dir is created 0700 and cache.yaml / pid files 0600.
 
@@ -118,7 +119,10 @@ Use `zmenuctl` to send `set`, `append`, or `prepend` commands to a running insta
 ```bash
 printf "alpha\nbravo\n" | zmenuctl --menu-id demo set --stdin
 zmenuctl --menu-id demo append "charlie"
+echo '{"v":3,"cmd":"set","items":[{"id":"a","label":"A"}]}' | zmenuctl --menu-id demo --json
 ```
+
+`--json` reads one raw protocol message from stdin, checks that it parses, and sends it unchanged.
 
 `zmenu --version` prints `zmenu` and a line `ipc-protocol 3`, the IPC protocol version this build speaks (a client such as combo-switcher doctor can check compatibility). It exits before any AppKit setup.
 

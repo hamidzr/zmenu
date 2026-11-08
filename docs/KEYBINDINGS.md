@@ -29,3 +29,11 @@ Every selection movement sets `Model.moved`, which makes the selection stick to 
 
 ## Cmd+digit shortcuts
 Cmd+1 to Cmd+9 accept the matching row (handled in `performKeyEquivalent:` on `ZigSearchField`), subject to `numeric_selection_mode`: `auto` is active for at most nine results and while the query does not end in a digit. The index column shows `Cmd+N` for the first nine rows; its width is reserved whenever the mode is not `off`, and the cells are blank while shortcuts are inactive.
+
+## Modifier+Enter, Cmd+K and Esc with actions
+Modified Return reaches the app by three routes, all funnelled into one accept:
+- `performKeyEquivalent:` on `ZigSearchField` for Cmd (and usually Ctrl) chords with key code 36 (Return) or 76 (keypad Enter).
+- `control:textView:doCommandBySelector:` for the field editor's translations: `insertNewline:`, `insertNewlineIgnoringFieldEditor:`, `insertLineBreak:`, `insertParagraphSeparator:`, `insertLineSeparator:`, `insertContainerBreak:`. The modifiers come from `NSApp.currentEvent` masked to shift/ctrl/option/command.
+- the field's `onSubmit:` action, as a fallback for plain Enter.
+
+The accept only goes through when the selected item declares an action with exactly those mods; otherwise `NSBeep`. Cmd+K (`performKeyEquivalent:`) toggles the action panel. Esc closes the panel first, then clears a pending confirm, then clears the query, then quits.

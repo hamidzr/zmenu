@@ -59,7 +59,7 @@ Version 3 is a superset of version 2. zmenu accepts both; every v3 field is opti
 - `keywords`: searched, never shown.
 - `kind`: item category used by scopes (for example `window`, `tab`, `app`, `tmux`, `t3`, `file`, `setting`, `action`, `uri`, `clipboard`, `ext`, `status`, `search`, `calc`).
 - `prefix`, `fallback`, `calc`: template items (below).
-- `action`, `actions`, `confirm`: accepted and preserved in the stored payload, but not acted on yet. They are reserved for the action panel: `action` labels the plain-Enter action, `actions` is a list of `{ "mods": "cmd", "label": "...", "confirm": "..." }` alternates (`mods` is the canonical `+`-joined subset in the order ctrl, alt, shift, cmd), `confirm` is a string or `true`.
+- `action`: label of the plain-Enter action (default "Open"). `actions`: list of `{ "mods": "cmd", "label": "...", "confirm": "..." }` alternates; `mods` is the canonical `+`-joined subset in the order ctrl, alt, shift, cmd (any order and case is accepted on input). `confirm` (on the item or an action): a string prompt or `true` for the default prompt "Press Enter again to confirm". See "Actions" below.
 - Extra fields on item objects are preserved for IPC-only output.
 
 Matching: label, subtitle and keywords are searched. A label hit scores higher than a subtitle hit, which scores higher than a keywords hit, so "safari" ranks the Safari app above a tab whose subtitle mentions safari. Highlights cover the label and the subtitle only.
@@ -102,8 +102,18 @@ The stored item object gets these fields added (a same-named key already in the 
 - `query`: the full raw query text, always.
 - `arg`: template rows only. The prefix remainder for a prefix item, the full query for a fallback, the expression for a calc item.
 - `result`: calc rows only. The formatted result.
+- `mods`: the canonical modifier string, only when the accept used modifiers (`Cmd+Enter` gives `"cmd"`). Absent for plain Enter.
 
 The item is re-serialized from parsed JSON, so key order is kept but whitespace is normalized and numbers are printed in `std.json` form (for example `1.0` becomes `1e0`). Send identifiers and other exact values as strings.
+
+## Actions
+
+Shown when any listed row has `action` or `actions`.
+
+- Footer bar: `Enter <action or Open>`, up to two alternates as `Cmd+Enter <label>` (the selected row's), then `Cmd+K Actions`.
+- Modifier+Enter (Cmd, Alt, Shift, Ctrl and combinations) accepts the selected item with those `mods` only if it declares an action with exactly those mods. Otherwise the system beeps and nothing happens. Plain Enter is unchanged.
+- Cmd+K opens an action panel for the selected item: the primary action plus one row per action, placeholder "Actions for <label>", number shortcuts, filtering. Enter accepts the original item with the chosen row's mods. Esc or Cmd+K closes it and restores query, scroll and selection. IPC updates keep applying to the underlying list and show once the panel closes. The panel keeps its own copy of the item.
+- Confirm: `item.confirm` guards plain Enter, `action.confirm` guards that action. The first accept shows the prompt in the row's detail in a warning color. A second accept of the same row with the same mods within 4 seconds goes through. A query change, selection change, item removal or the timeout clears it (one-shot timer).
 
 ## Size limits
 
@@ -117,6 +127,7 @@ Using `zmenuctl`:
 printf "alpha\nbravo\n" | zmenuctl --menu-id demo set --stdin
 zmenuctl --menu-id demo append "charlie"
 zmenuctl --menu-id demo set # clear all items
+zmenuctl --menu-id demo --json < message.json # send a raw protocol message
 ```
 
 Or raw protocol:
