@@ -64,9 +64,12 @@ fn isSubsequence(token: []const u8, label: []const u8) bool {
     return false;
 }
 
-fn substringScore(token: []const u8, label: []const u8) ?i32 {
+const SubstringHit = struct { score: i32, index: usize };
+
+/// best-scoring occurrence of the token, the first one on ties
+fn substringBest(token: []const u8, label: []const u8) ?SubstringHit {
     const upper = util.hasUpperAscii(token);
-    var best: ?i32 = null;
+    var best: ?SubstringHit = null;
     var i: usize = 0;
     while (i + token.len <= label.len) : (i += 1) {
         const window = label[i .. i + token.len];
@@ -79,18 +82,29 @@ fn substringScore(token: []const u8, label: []const u8) ?i32 {
             score += word_start_bonus;
         }
         if (upper and std.mem.eql(u8, window, token)) score += case_match_bonus;
-        best = @max(best orelse score, score);
+        if (best == null or score > best.?.score) best = .{ .score = score, .index = i };
     }
     return best;
 }
 
+fn substringScore(token: []const u8, label: []const u8) ?i32 {
+    return (substringBest(token, label) orelse return null).score;
+}
+
 /// every token char lands on a word start, in order
 fn acronymScore(token: []const u8, label: []const u8) ?i32 {
+    return acronymMatch(token, label, null);
+}
+
+/// acronym score; when `positions` is given it receives the label index of each
+/// token char (it must hold token.len entries)
+fn acronymMatch(token: []const u8, label: []const u8, positions: ?[]usize) ?i32 {
     var ti: usize = 0;
     var starts_label = false;
     for (label, 0..) |c, j| {
         if (!isBoundary(label, j) or !util.charsEqual(c, token[ti], true)) continue;
         if (ti == 0 and j == 0) starts_label = true;
+        if (positions) |out| out[ti] = j;
         ti += 1;
         if (ti == token.len) break;
     }
@@ -105,6 +119,34 @@ fn charScore(label: []const u8, j: usize) i32 {
     return score;
 }
 
+const Row = [dp_max_label]i32;
+
+fn dpFirstRow(token: []const u8, label: []const u8, n: usize, cur: *Row) void {
+    for (0..n) |j| {
+        cur[j] = if (util.charsEqual(label[j], token[0], true))
+            charScore(label, j) - @as(i32, @intCast(@min(j, leading_gap_penalty_max)))
+        else
+            unreachable_score;
+    }
+}
+
+/// row i (>= 1) of the alignment table from row i - 1
+fn dpNextRow(token: []const u8, label: []const u8, n: usize, i: usize, prev: *const Row, cur: *Row) void {
+    // best prev-row score ending at least one char before j, minus its gap
+    var gap: i32 = unreachable_score;
+    for (0..n) |j| {
+        gap -= gap_extend_penalty;
+        if (j >= 2 and prev[j - 2] > reachable_floor) gap = @max(gap, prev[j - 2] - gap_open_penalty);
+        cur[j] = unreachable_score;
+        if (!util.charsEqual(label[j], token[i], true)) continue;
+
+        var best: i32 = unreachable_score;
+        if (j >= 1 and prev[j - 1] > reachable_floor) best = prev[j - 1] + contiguous_bonus;
+        if (i != 1 or isBoundary(label, j)) best = @max(best, gap);
+        if (best > reachable_floor) cur[j] = best + charScore(label, j);
+    }
+}
+
 /// Best alignment of the token as a subsequence. The second token char must
 /// be adjacent to the first or start a word, so loose matches cannot start
 /// with two unrelated letters; later chars may sit anywhere.
@@ -114,40 +156,87 @@ fn subsequenceScore(token: []const u8, label: []const u8) ?i32 {
     // too big to align; the caller already knows it is a subsequence
     if (m > dp_max_query) return 1;
 
-    var row_a: [dp_max_label]i32 = undefined;
-    var row_b: [dp_max_label]i32 = undefined;
-    var prev: *[dp_max_label]i32 = &row_a;
-    var cur: *[dp_max_label]i32 = &row_b;
+    var row_a: Row = undefined;
+    var row_b: Row = undefined;
+    var prev: *Row = &row_a;
+    var cur: *Row = &row_b;
 
-    for (0..n) |j| {
-        cur[j] = if (util.charsEqual(label[j], token[0], true))
-            charScore(label, j) - @as(i32, @intCast(@min(j, leading_gap_penalty_max)))
-        else
-            unreachable_score;
-    }
-
+    dpFirstRow(token, label, n, cur);
     var i: usize = 1;
     while (i < m) : (i += 1) {
-        std.mem.swap(*[dp_max_label]i32, &prev, &cur);
-        // best prev-row score ending at least one char before j, minus its gap
-        var gap: i32 = unreachable_score;
-        for (0..n) |j| {
-            gap -= gap_extend_penalty;
-            if (j >= 2 and prev[j - 2] > reachable_floor) gap = @max(gap, prev[j - 2] - gap_open_penalty);
-            cur[j] = unreachable_score;
-            if (!util.charsEqual(label[j], token[i], true)) continue;
-
-            var best: i32 = unreachable_score;
-            if (j >= 1 and prev[j - 1] > reachable_floor) best = prev[j - 1] + contiguous_bonus;
-            if (i != 1 or isBoundary(label, j)) best = @max(best, gap);
-            if (best > reachable_floor) cur[j] = best + charScore(label, j);
-        }
+        std.mem.swap(*Row, &prev, &cur);
+        dpNextRow(token, label, n, i, prev, cur);
     }
 
     var best: i32 = unreachable_score;
     for (cur[0..n]) |score| best = @max(best, score);
     if (best <= reachable_floor) return if (label.len > n) 1 else null;
     return std.math.clamp(best, 1, subsequence_max);
+}
+
+/// label indexes of the best subsequence alignment (same table as the score),
+/// null when there is none or the token/label exceed the alignment window
+fn subsequencePositions(token: []const u8, label: []const u8, out: []usize) ?[]usize {
+    const n = @min(label.len, dp_max_label);
+    const m = token.len;
+    if (m == 0 or m > dp_max_query or m > out.len) return null;
+
+    var table: [dp_max_query]Row = undefined;
+    dpFirstRow(token, label, n, &table[0]);
+    var i: usize = 1;
+    while (i < m) : (i += 1) dpNextRow(token, label, n, i, &table[i - 1], &table[i]);
+
+    var j: usize = 0;
+    var best: i32 = unreachable_score;
+    for (table[m - 1][0..n], 0..) |score, idx| {
+        if (score > best) {
+            best = score;
+            j = idx;
+        }
+    }
+    if (best <= reachable_floor) return null;
+
+    // walk back: each cell came from the adjacent cell (contiguous bonus) or a
+    // gap-penalized earlier one in the previous row
+    i = m - 1;
+    while (true) {
+        out[i] = j;
+        if (i == 0) break;
+        const target = table[i][j] - charScore(label, j);
+        const prev = &table[i - 1];
+        if (j >= 1 and prev[j - 1] > reachable_floor and prev[j - 1] + contiguous_bonus == target) {
+            j -= 1;
+        } else {
+            if (j < 2) return null;
+            var k: usize = j - 1;
+            j = while (k > 0) {
+                k -= 1;
+                const gap = gap_open_penalty + gap_extend_penalty * @as(i32, @intCast(j - 2 - k));
+                if (prev[k] > reachable_floor and prev[k] - gap == target) break k;
+            } else return null;
+        }
+        i -= 1;
+    }
+    return out[0..m];
+}
+
+/// Label indexes (ascending) that a token matches, with the same rules as
+/// `tokenScore`: the best substring, else a word-start acronym, else the best
+/// loose subsequence. Null when the token does not match.
+pub fn tokenPositions(token: []const u8, label: []const u8, out: []usize) ?[]usize {
+    if (token.len == 0 or token.len > label.len or token.len > out.len) return null;
+    if (!isSubsequence(token, label)) return null;
+
+    const substring = substringBest(token, label);
+    const acronym_score = if (token.len >= 2) acronymMatch(token, label, out) else null;
+    if (substring) |hit| {
+        if (acronym_score == null or hit.score >= acronym_score.?) {
+            for (out[0..token.len], hit.index..) |*slot, index| slot.* = index;
+            return out[0..token.len];
+        }
+    }
+    if (acronym_score != null) return out[0..token.len];
+    return subsequencePositions(token, label, out);
 }
 
 fn expectRanked(query: []const u8, labels: []const []const u8, expected_first: usize) !void {
@@ -214,4 +303,33 @@ test "long labels and tokens stay matchable" {
     try std.testing.expect(tokenScore("qz", &long) != null);
     // subsequence beyond the alignment window still matches
     try std.testing.expect(tokenScore("xqz", &long) != null);
+}
+
+test "token positions exist exactly when the token scores, and spell the token" {
+    const labels = [_][]const u8{
+        "Visual Studio Code", "Safari",      "agenda",      "Dash - safari docs", "fooBar baz",
+        "to d a y",           "xx today.md", "Unsafe mode", "a",                  "",
+    };
+    const tokens = [_][]const u8{ "vsc", "saf", "agda", "safi", "fb", "today", "sai", "zz", "a", "co", "Saf" };
+    var out: [64]usize = undefined;
+    for (labels) |label| {
+        for (tokens) |token| {
+            const score = tokenScore(token, label);
+            const positions = tokenPositions(token, label, &out);
+            try std.testing.expectEqual(score != null, positions != null);
+            const hit = positions orelse continue;
+            try std.testing.expectEqual(token.len, hit.len);
+            for (hit, 0..) |index, n| {
+                if (n > 0) try std.testing.expect(index > hit[n - 1]);
+                try std.testing.expect(util.charsEqual(label[index], token[n], true));
+            }
+        }
+    }
+}
+
+test "positions prefer the same occurrence the score does" {
+    var out: [8]usize = undefined;
+    // the word-start occurrence beats the mid-word one
+    const hit = tokenPositions("saf", "Unsafe safari", &out).?;
+    try std.testing.expectEqual(@as(usize, 7), hit[0]);
 }

@@ -19,6 +19,8 @@ pub const AppState = struct {
     row_font: objc.Object,
     counter_font: objc.Object,
     hint_font: objc.Object,
+    /// matched characters of a row label
+    bold_font: objc.Object,
     palette: theme.Palette,
     /// row last styled as selected, so a selection change restyles just two rows
     styled_selected_row: ?usize = null,
@@ -44,3 +46,11 @@ pub const digit_labels = [_][:0]const u8{
 };
 
 pub var g_state: ?*AppState = null;
+
+/// the text in the search field, as UTF-8 owned by AppKit (valid until the next change)
+pub fn currentQuery(app_state: *AppState) []const u8 {
+    const text = app_state.text_field.msgSend(objc.Object, "stringValue", .{});
+    const utf8_ptr = text.msgSend(?[*:0]const u8, "UTF8String", .{});
+    if (utf8_ptr == null) return "";
+    return std.mem.sliceTo(utf8_ptr.?, 0);
+}

@@ -1,5 +1,6 @@
 const std = @import("std");
 pub const fold = @import("search/fold.zig");
+pub const highlight = @import("search/highlight.zig");
 const fuzzy = @import("search/fuzzy.zig");
 const levenshtein = @import("search/levenshtein.zig");
 const rank = @import("search/rank.zig");
@@ -8,6 +9,7 @@ const types = @import("search/types.zig");
 test {
     _ = rank;
     _ = fold;
+    _ = highlight;
 }
 
 pub const SearchMethod = types.SearchMethod;

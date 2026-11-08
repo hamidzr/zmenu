@@ -152,12 +152,7 @@ pub fn visibleRows(app_state: *state.AppState) isize {
     return @max(1, @as(isize, @intFromFloat(@floor(rect.size.height / row_height))));
 }
 
-pub fn currentQuery(app_state: *state.AppState) []const u8 {
-    const text = app_state.text_field.msgSend(objc.Object, "stringValue", .{});
-    const utf8_ptr = text.msgSend(?[*:0]const u8, "UTF8String", .{});
-    if (utf8_ptr == null) return "";
-    return std.mem.sliceTo(utf8_ptr.?, 0);
-}
+pub const currentQuery = state.currentQuery;
 
 pub fn saveCache(app_state: *state.AppState, selection: []const u8) void {
     if (app_state.config.menu_id.len == 0) return;

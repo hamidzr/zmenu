@@ -1,5 +1,6 @@
 const objc = @import("objc");
 const objc_helpers = @import("objc_helpers.zig");
+const highlight = @import("../search/highlight.zig");
 const state = @import("state.zig");
 
 const NSRect = objc_helpers.NSRect;
@@ -8,6 +9,8 @@ const nsString = objc_helpers.nsString;
 const nsColor = objc_helpers.nsColor;
 const lineHeight = objc_helpers.lineHeight;
 const label_optical_offset = objc_helpers.label_optical_offset;
+
+const ns_line_break_truncating_tail: c_ulong = 4;
 
 pub const TextCellStyle = struct {
     identifier: [*:0]const u8,
@@ -74,22 +77,87 @@ fn restyleRow(app_state: *state.AppState, row: usize) void {
     if (row >= app_state.model.filtered.items.len) return;
     const selected = app_state.model.selectedRow() == row;
     const palette = app_state.palette;
-    restyleCell(app_state, "index", row, if (selected) palette.selected_secondary else palette.secondary);
-    restyleCell(app_state, "items", row, if (selected) palette.selected_text else palette.text);
+    if (cellAt(app_state, "index", row)) |cell| {
+        const label = cell.msgSend(objc.Object, "textField", .{});
+        label.msgSend(void, "setTextColor:", .{if (selected) palette.selected_secondary else palette.secondary});
+    }
+    if (cellAt(app_state, "items", row)) |cell| configureItemCell(app_state, cell, row);
 }
 
-fn restyleCell(app_state: *state.AppState, identifier: [*:0]const u8, row: usize, color: objc.Object) void {
+fn cellAt(app_state: *state.AppState, identifier: [*:0]const u8, row: usize) ?objc.Object {
     const column = app_state.table_view.msgSend(c_long, "columnWithIdentifier:", .{nsString(identifier)});
-    if (column < 0) return;
+    if (column < 0) return null;
     const cell = app_state.table_view.msgSend(objc.Object, "viewAtColumn:row:makeIfNecessary:", .{
         column,
         @as(c_long, @intCast(row)),
         false,
     });
-    if (cell.value == null) return;
-    const label = cell.msgSend(objc.Object, "textField", .{});
-    if (label.value == null) return;
-    label.msgSend(void, "setTextColor:", .{color});
+    if (cell.value == null or cell.msgSend(objc.Object, "textField", .{}).value == null) return null;
+    return cell;
+}
+
+/// Sets a row label with the query's matched characters bold, and tinted with
+/// the accent color unless the row is selected (accent on the selection fill is
+/// unreadable). Rows without matches keep the plain string.
+pub fn configureItemCell(app_state: *state.AppState, cell: objc.Object, row: usize) void {
+    const label_view = cell.msgSend(objc.Object, "textField", .{});
+    if (label_view.value == null) return;
+    const label = app_state.model.items[app_state.model.filtered.items[row]].label;
+    const selected = app_state.model.selectedRow() == row;
+    const palette = app_state.palette;
+    const color = if (selected) palette.selected_text else palette.text;
+
+    var buffer: [max_highlight_ranges]highlight.Range = undefined;
+    const ranges = highlight.matchRanges(label, state.currentQuery(app_state), app_state.config.search.method, &buffer);
+    if (ranges.len == 0) {
+        label_view.msgSend(void, "setStringValue:", .{nsString(label)});
+        label_view.msgSend(void, "setFont:", .{app_state.row_font});
+        label_view.msgSend(void, "setTextColor:", .{color});
+        return;
+    }
+    label_view.msgSend(void, "setAttributedStringValue:", .{
+        highlightedString(app_state, label, ranges, color, if (selected) null else palette.accent),
+    });
+}
+
+const max_highlight_ranges = 16;
+
+const NSRange = extern struct {
+    location: c_ulong,
+    length: c_ulong,
+};
+
+fn highlightedString(
+    app_state: *state.AppState,
+    label: [:0]const u8,
+    ranges: []const highlight.Range,
+    color: objc.Object,
+    tint: ?objc.Object,
+) objc.Object {
+    const NSMutableDictionary = objc.getClass("NSMutableDictionary").?;
+    const NSMutableParagraphStyle = objc.getClass("NSMutableParagraphStyle").?;
+    const NSMutableAttributedString = objc.getClass("NSMutableAttributedString").?;
+
+    // an attributed string carries its own line breaking; keep the label's tail truncation
+    const paragraph = NSMutableParagraphStyle.msgSend(objc.Object, "alloc", .{}).msgSend(objc.Object, "init", .{});
+    _ = paragraph.msgSend(objc.Object, "autorelease", .{});
+    paragraph.msgSend(void, "setLineBreakMode:", .{ns_line_break_truncating_tail});
+    const attributes = NSMutableDictionary.msgSend(objc.Object, "dictionary", .{});
+    attributes.msgSend(void, "setObject:forKey:", .{ app_state.row_font, nsString("NSFont") });
+    attributes.msgSend(void, "setObject:forKey:", .{ color, nsString("NSColor") });
+    attributes.msgSend(void, "setObject:forKey:", .{ paragraph, nsString("NSParagraphStyle") });
+
+    const attributed = NSMutableAttributedString.msgSend(objc.Object, "alloc", .{})
+        .msgSend(objc.Object, "initWithString:attributes:", .{ nsString(label), attributes });
+    for (ranges) |range| {
+        const location = highlight.utf16Len(label[0..range.start]);
+        const ns_range = NSRange{ .location = location, .length = highlight.utf16Len(label[range.start..range.end]) };
+        attributed.msgSend(void, "addAttribute:value:range:", .{ nsString("NSFont"), app_state.bold_font, ns_range });
+        if (tint) |accent| {
+            attributed.msgSend(void, "addAttribute:value:range:", .{ nsString("NSColor"), accent, ns_range });
+        }
+    }
+    return attributed.msgSend(objc.Object, "autorelease", .{});
 }
 
 /// An icon-only cell view. Reuses the image view across dequeues.
@@ -132,7 +200,7 @@ fn makeLabel(row_height: f64, column_width: f64, style: TextCellStyle) objc.Obje
     label.msgSend(void, "setAlignment:", .{style.alignment});
     label.msgSend(void, "setFont:", .{style.font});
     label.msgSend(void, "setTextColor:", .{style.text_color});
-    label.msgSend(void, "setLineBreakMode:", .{@as(c_ulong, 2)}); // truncating tail
+    label.msgSend(void, "setLineBreakMode:", .{ns_line_break_truncating_tail});
     // width flexible, height fixed
     label.msgSend(void, "setAutoresizingMask:", .{@as(c_ulong, 2)});
     return label;

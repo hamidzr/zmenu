@@ -248,10 +248,7 @@ pub fn tableViewViewForTableColumn(
         .left_pad = if (app_state.config.hasNumericSelectionColumn() or app_state.config.show_icons) 6.0 else 12.0,
         .right_pad = 6.0,
     });
-    const item_index = app_state.model.filtered.items[row_index];
-    const selected = app_state.model.selectedRow() == row_index;
-    const color = if (selected) app_state.palette.selected_text else app_state.palette.text;
-    views.setCellText(cell, app_state.model.items[item_index].label, color);
+    views.configureItemCell(app_state, cell, row_index);
     return cell.value;
 }
 

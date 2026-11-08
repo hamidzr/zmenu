@@ -105,6 +105,53 @@ pub fn foldBuf(buf: []u8, s: []const u8) []const u8 {
     return foldInto(buf, s);
 }
 
+/// Folds `s` into `text_buf` and records, per folded byte, the byte range of the
+/// original sequence it came from (`starts[i]..ends[i]`), so a match found in
+/// folded text can be shown on the original label. A multi-byte letter folds to
+/// one byte, a ligature to several bytes that all map to the same original
+/// range. Null when a buffer is too small.
+pub fn foldWithMap(text_buf: []u8, starts: []u32, ends: []u32, s: []const u8) ?[]const u8 {
+    var n: usize = 0;
+    var i: usize = 0;
+    while (i < s.len) {
+        const text: []const u8, const consumed: usize = if (foldAt(s, i)) |f| .{ f.text, f.consumed } else .{ s[i..][0..1], 1 };
+        if (n + text.len > text_buf.len or n + text.len > starts.len or n + text.len > ends.len) return null;
+        for (text, 0..) |byte, offset| {
+            text_buf[n + offset] = byte;
+            starts[n + offset] = @intCast(i);
+            ends[n + offset] = @intCast(i + consumed);
+        }
+        n += text.len;
+        i += consumed;
+    }
+    return text_buf[0..n];
+}
+
+test "foldWithMap maps folded bytes back to original ranges" {
+    var text: [32]u8 = undefined;
+    var starts: [32]u32 = undefined;
+    var ends: [32]u32 = undefined;
+
+    const cafe = foldWithMap(&text, &starts, &ends, "Café x").?;
+    try std.testing.expectEqualStrings("Cafe x", cafe);
+    try std.testing.expectEqual(@as(u32, 3), starts[3]);
+    try std.testing.expectEqual(@as(u32, 5), ends[3]);
+    // bytes after the two-byte letter shift by one
+    try std.testing.expectEqual(@as(u32, 5), starts[4]);
+    try std.testing.expectEqual(@as(u32, 6), ends[4]);
+
+    const strasse = foldWithMap(&text, &starts, &ends, "Straße").?;
+    try std.testing.expectEqualStrings("Strasse", strasse);
+    try std.testing.expectEqual(@as(u32, 4), starts[4]);
+    try std.testing.expectEqual(@as(u32, 6), ends[4]);
+    try std.testing.expectEqual(@as(u32, 4), starts[5]);
+    try std.testing.expectEqual(@as(u32, 6), ends[5]);
+    try std.testing.expectEqual(@as(u32, 6), starts[6]);
+
+    var tiny: [3]u8 = undefined;
+    try std.testing.expect(foldWithMap(&tiny, &starts, &ends, "Café x") == null);
+}
+
 test "folds common Latin letters and keeps case" {
     var buf: [64]u8 = undefined;
     try std.testing.expectEqualStrings("Cafe", foldBuf(&buf, "Café"));

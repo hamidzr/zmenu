@@ -55,6 +55,7 @@ pub fn nsFont(size: f64) objc.Object {
 pub const font_weight_regular: f64 = 0.0;
 pub const font_weight_medium: f64 = 0.23;
 pub const font_weight_semibold: f64 = 0.30;
+pub const font_weight_bold: f64 = 0.40;
 
 pub fn nsFontWeight(size: f64, weight: f64) objc.Object {
     const NSFont = objc.getClass("NSFont").?;
