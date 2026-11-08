@@ -28,6 +28,9 @@ fn inputHandlerClass() objc.Class {
     if (!cls.addMethod("onSubmit:", callbacks.onSubmit)) {
         @panic("failed to add onSubmit: method");
     }
+    if (!cls.addMethod("onRowClick:", callbacks.onRowClick)) {
+        @panic("failed to add onRowClick: method");
+    }
     if (!cls.addMethod("mouseMoved:", callbacks.mouseMoved)) {
         @panic("failed to add mouseMoved: method");
     }

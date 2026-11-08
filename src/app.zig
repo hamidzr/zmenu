@@ -343,7 +343,10 @@ pub fn run(cli_config: appconfig.Config) !void {
     table_view.msgSend(void, "setUsesAlternatingRowBackgroundColors:", .{config.alternate_rows});
     table_view.msgSend(void, "setSelectionHighlightStyle:", .{@as(c_long, 0)}); // NSTableViewSelectionHighlightStyleRegular
     table_view.msgSend(void, "setTarget:", .{handler});
-    table_view.msgSend(void, "setDoubleAction:", .{objc.sel("onSubmit:")});
+    // a single click accepts the row; the table never takes first responder, so the
+    // search field keeps keyboard focus after any click
+    table_view.msgSend(void, "setAction:", .{objc.sel("onRowClick:")});
+    table_view.msgSend(void, "setRefusesFirstResponder:", .{true});
     table_view.msgSend(void, "setIntercellSpacing:", .{NSSize{ .width = 0, .height = 0 }});
     table_view.msgSend(void, "setColumnAutoresizingStyle:", .{@as(c_ulong, 1)}); // NSTableViewLastColumnOnlyAutoresizingStyle
 

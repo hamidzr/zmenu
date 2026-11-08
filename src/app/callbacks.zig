@@ -135,6 +135,20 @@ pub fn onSubmit(target: objc.c.id, sel: objc.c.SEL, sender: objc.c.id) callconv(
     logic.acceptSelection(app_state);
 }
 
+/// Single click on a row accepts it. The click also selected the row (marking a
+/// user move); clicks past the last row have no `clickedRow` and are ignored.
+pub fn onRowClick(target: objc.c.id, sel: objc.c.SEL, sender: objc.c.id) callconv(.c) void {
+    _ = target;
+    _ = sel;
+    _ = sender;
+
+    const app_state = state.g_state orelse return;
+    const row = app_state.table_view.msgSend(c_long, "clickedRow", .{});
+    if (row < 0 or @as(usize, @intCast(row)) >= app_state.model.filtered.items.len) return;
+    app_state.model.selected = row;
+    logic.acceptSelection(app_state);
+}
+
 fn currentEventIsReturnKey() bool {
     const NSEventTypeKeyDown: c_ulong = 10;
     const kVK_Return: c_ushort = 36;
@@ -312,11 +326,15 @@ fn syncSelectedRow(app_state: *state.AppState, row: c_long) void {
     app_state.model.selected = if (in_range) @intCast(row) else -1;
 }
 
+fn clearQuery(app_state: *state.AppState) void {
+    app_state.text_field.msgSend(void, "setStringValue:", .{nsString("")});
+    applyUserQuery(app_state, "");
+}
+
 /// Esc clears a non-empty query first, then cancels
 fn escape(app_state: *state.AppState) void {
     if (logic.currentQuery(app_state).len > 0) {
-        app_state.text_field.msgSend(void, "setStringValue:", .{nsString("")});
-        applyUserQuery(app_state, "");
+        clearQuery(app_state);
         return;
     }
     logic.quit(app_state, exit_codes.user_canceled);
@@ -477,12 +495,6 @@ pub fn keyDown(target: objc.c.id, sel: objc.c.SEL, event: objc.c.id) callconv(.c
                 app_state.text_field.msgSend(void, "selectText:", .{@as(objc.c.id, null)});
                 return;
             }
-
-            if ((ec.modifiers & NSEventModifierFlagControl) != 0 and (ec.char == 'l' or ec.char == 'L')) {
-                app_state.text_field.msgSend(void, "setStringValue:", .{nsString("")});
-                applyUserQuery(app_state, "");
-                return;
-            }
         }
     }
 
@@ -500,6 +512,11 @@ pub fn performKeyEquivalent(target: objc.c.id, sel: objc.c.SEL, event: objc.c.id
         if (state.g_state) |app_state| {
             if (controlNavDelta(ec)) |delta| {
                 logic.moveSelection(app_state, delta);
+                return true;
+            }
+            // not in keyDown: with the field editor active, keys never reach the field
+            if (ec.modifiers == NSEventModifierFlagControl and std.ascii.toLower(ec.char) == 'l') {
+                clearQuery(app_state);
                 return true;
             }
         }

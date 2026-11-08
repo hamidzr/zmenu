@@ -3,6 +3,12 @@
 ## Cmd+A select-all
 AppKit does not always route Cmd+A through `keyDown:` for the search field. In this app it can surface as `noop:` via `control:textView:doCommandBySelector:`. To ensure select-all works, the handler is implemented in `performKeyEquivalent:` on `ZigSearchField`.
 
+## Ctrl+L
+Clears the query. Handled in `performKeyEquivalent:` on `ZigSearchField` (exact Ctrl modifier): while the field editor is first responder, `keyDown:` on the field is never called.
+
+## Mouse
+A single click accepts the clicked row (`onRowClick:`, the table's action). The table refuses first responder so the field editor stays active after a click. Clicks past the last row are ignored.
+
 ## Esc
 `cancelOperation:` (from the field editor via `control:textView:doCommandBySelector:`, or on `ZigSearchField` directly) clears the query and re-filters when the field has text. With an empty field it quits with the user-cancel exit code.
 

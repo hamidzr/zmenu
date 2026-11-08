@@ -10,7 +10,7 @@ Native macOS AppKit MVP for the gmenu replacement (zmenu).
 - While a streaming source (`--ipc-only`, `--follow-stdin`) has sent nothing yet the list shows a dim "Loading..." line; a query with no matches shows "No results". Neither is a row, so nothing is selectable, counted or acceptable.
 - Matched characters in each row are drawn bold and accent-tinted (bold only on the selected row); matching text is found with the same rules as ranking.
 - Up/Down/Tab/Shift+Tab, Ctrl+N/P and Ctrl+J/K move the selection (wrapping). PageUp/PageDown move a page; Cmd+Up/Cmd+Down jump to the first/last item; Home/End do the same while the query is empty.
-- Double-clicking a row accepts that item.
+- Clicking a row accepts that item; the search field keeps keyboard focus.
 - Cmd+1 to Cmd+9 accept the corresponding item when numeric selection is active; the first nine rows show a dim command-key hint (the command symbol plus the digit), and the hint column keeps its width when hints are inactive.
 - Ctrl+L clears the query.
 - A pid file in the temp dir prevents multiple instances per menu id.
