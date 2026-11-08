@@ -19,6 +19,9 @@ test {
     _ = @import("calc.zig");
     _ = @import("template.zig");
     _ = @import("scope.zig");
+    _ = @import("mods.zig");
+    _ = @import("confirm.zig");
+    _ = @import("actions.zig");
 }
 
 // A set must become visible to the UI in one drain, never item by item.

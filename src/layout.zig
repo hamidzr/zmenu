@@ -40,10 +40,32 @@ pub const Metrics = struct {
         return @as(f64, @floatFromInt(row_count)) * @max(self.row_height, 1.0);
     }
 
+    /// window height without the footer bar
     pub fn windowHeight(self: Metrics, row_count: usize) f64 {
-        return self.field_height + self.padding * 3.0 + self.listHeight(row_count);
+        return self.windowHeightFor(row_count, false);
+    }
+
+    /// Space below the list: the window padding, or the footer bar when shown
+    /// (it takes the place of that padding).
+    pub fn bottomInset(self: Metrics, footer: bool) f64 {
+        return if (footer) footer_height + footer_gap else self.padding;
+    }
+
+    pub fn windowHeightFor(self: Metrics, row_count: usize, footer: bool) f64 {
+        return self.field_height + self.padding * 2.0 + self.bottomInset(footer) + self.listHeight(row_count);
+    }
+
+    /// y of the list's bottom edge (AppKit origin at the bottom left)
+    pub fn listY(self: Metrics, footer: bool) f64 {
+        return self.bottomInset(footer);
     }
 };
+
+/// height of the hint bar at the bottom of the window, and the space between it and the list
+pub const footer_height: f64 = 32.0;
+pub const footer_gap: f64 = 6.0;
+/// the hint text starts this far in from the list's left edge
+pub const footer_text_inset: f64 = 12.0;
 
 /// Header geometry: the search field, the optional loading spinner and the
 /// counter share one line. The counter grows with its text (a scope label makes
@@ -91,7 +113,14 @@ pub const detail_gap: f64 = 8.0;
 /// Width given to the detail text: its own width, at most `detail_max_fraction`
 /// of the row. Longer text is tail-truncated inside that width.
 pub fn detailWidth(text_width: f64, row_width: f64) f64 {
-    const limit = @max(row_width, 0.0) * detail_max_fraction;
+    return detailWidthUpTo(text_width, row_width, detail_max_fraction);
+}
+
+/// a confirm prompt replaces the detail and may take this share of the row
+pub const prompt_max_fraction: f64 = 0.62;
+
+pub fn detailWidthUpTo(text_width: f64, row_width: f64, fraction: f64) f64 {
+    const limit = @max(row_width, 0.0) * fraction;
     return @min(@max(text_width, 0.0), limit);
 }
 
@@ -120,6 +149,18 @@ test "metrics match the legacy fixed layout at the default height" {
     const metrics = Metrics.init(450, 44, 14, 34);
     try std.testing.expectEqual(@as(usize, 10), metrics.max_rows);
     try std.testing.expectEqual(@as(f64, 44 + 42 + 340), metrics.windowHeight(10));
+}
+
+test "the footer bar replaces the bottom padding" {
+    const metrics = Metrics.init(450, 44, 14, 34);
+    try std.testing.expectEqual(metrics.windowHeight(3), metrics.windowHeightFor(3, false));
+    try std.testing.expectEqual(metrics.windowHeight(3) - 14 + footer_height + footer_gap, metrics.windowHeightFor(3, true));
+    try std.testing.expectEqual(@as(f64, 14), metrics.listY(false));
+    try std.testing.expectEqual(footer_height + footer_gap, metrics.listY(true));
+    // the list's top edge is the same distance below the window top either way
+    const top_gap_plain = metrics.windowHeightFor(3, false) - (metrics.listY(false) + metrics.listHeight(3));
+    const top_gap_footer = metrics.windowHeightFor(3, true) - (metrics.listY(true) + metrics.listHeight(3));
+    try std.testing.expectEqual(top_gap_plain, top_gap_footer);
 }
 
 test "rows clamp between one and max_rows" {
@@ -173,6 +214,12 @@ test "detail takes its own width up to 30 percent of the row" {
     try std.testing.expectEqual(@as(f64, 180), detailWidth(400, 600));
     try std.testing.expectEqual(@as(f64, 0), detailWidth(-3, 600));
     try std.testing.expectEqual(@as(f64, 0), detailWidth(50, -10));
+}
+
+test "a prompt may use more of the row than a detail" {
+    try std.testing.expectEqual(@as(f64, 372), detailWidthUpTo(500, 600, prompt_max_fraction));
+    try std.testing.expectEqual(@as(f64, 180), detailWidthUpTo(500, 600, detail_max_fraction));
+    try std.testing.expectEqual(@as(f64, 90), detailWidthUpTo(90, 600, prompt_max_fraction));
 }
 
 test "default header matches the fixed 100pt counter column" {
