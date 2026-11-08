@@ -81,9 +81,14 @@ pub fn maybeAutoAccept(app_state: *state.AppState, trigger: AutoAcceptTrigger) v
         return;
     }
 
-    if (trigger == .stream_close and streamCloseAutoAcceptNeedsDelay(app_state.last_keystroke_ms, time_compat.milliTimestamp())) {
-        app_state.pending_stream_close_auto_accept = true;
-        return;
+    if (trigger == .stream_close) {
+        const wait_ms = streamCloseAutoAcceptWaitMs(app_state.last_keystroke_ms, time_compat.milliTimestamp());
+        if (wait_ms > 0) {
+            app_state.pending_stream_close_auto_accept = true;
+            const seconds = @as(f64, @floatFromInt(wait_ms)) / 1000.0;
+            objc_helpers.scheduleTimer(seconds, app_state.handler, "onAutoAcceptTimer:", false);
+            return;
+        }
     }
 
     app_state.pending_stream_close_auto_accept = false;
@@ -145,7 +150,8 @@ fn outputAndQuit(app_state: *state.AppState, label: []const u8, output: []const 
     quit(app_state, 0);
 }
 
-fn streamCloseAutoAcceptNeedsDelay(last_keystroke_ms: i64, now_ms: i64) bool {
-    if (last_keystroke_ms <= 0) return false;
-    return now_ms - last_keystroke_ms < stream_close_auto_accept_delay_ms;
+/// time left before a stream-close auto-accept may fire, 0 when it can fire now
+fn streamCloseAutoAcceptWaitMs(last_keystroke_ms: i64, now_ms: i64) i64 {
+    if (last_keystroke_ms <= 0) return 0;
+    return @max(0, stream_close_auto_accept_delay_ms - (now_ms - last_keystroke_ms));
 }

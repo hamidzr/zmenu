@@ -27,11 +27,18 @@ pub const ItemUpdate = struct {
     batch: u64,
 };
 
+pub const WakeFn = *const fn (ctx: ?*anyopaque) void;
+
 pub const UpdateQueue = struct {
     allocator: std.mem.Allocator,
     mutex: std.Io.Mutex = .init,
     items: std.ArrayList(ItemUpdate),
     next_batch: u64,
+    /// called from the pushing thread when the consumer should drain; at most
+    /// one call is outstanding until the next drain
+    wake_fn: ?WakeFn = null,
+    wake_ctx: ?*anyopaque = null,
+    wake_pending: std.atomic.Value(bool) = .init(false),
 
     pub fn init(allocator: std.mem.Allocator) UpdateQueue {
         return .{
@@ -41,15 +48,31 @@ pub const UpdateQueue = struct {
         };
     }
 
+    /// install before the first push; wake() requests a drain of anything queued earlier
+    pub fn setWake(self: *UpdateQueue, wake_fn: WakeFn, ctx: ?*anyopaque) void {
+        self.wake_fn = wake_fn;
+        self.wake_ctx = ctx;
+        self.wake();
+    }
+
+    pub fn wake(self: *UpdateQueue) void {
+        const wake_fn = self.wake_fn orelse return;
+        if (self.wake_pending.swap(true, .acq_rel)) return;
+        wake_fn(self.wake_ctx);
+    }
+
     pub fn pushOwned(self: *UpdateQueue, kind: UpdateKind, source: UpdateSource, line: []const u8, batch: u64) void {
         self.push(kind, source, line, batch);
     }
 
     pub fn pushBatchOwned(self: *UpdateQueue, batch: []const ItemUpdate) void {
         if (batch.len == 0) return;
-        self.mutex.lockUncancelable(io_compat.globalIo());
-        defer self.mutex.unlock(io_compat.globalIo());
-        self.items.appendSlice(self.allocator, batch) catch freeLines(self.allocator, batch);
+        {
+            self.mutex.lockUncancelable(io_compat.globalIo());
+            defer self.mutex.unlock(io_compat.globalIo());
+            self.items.appendSlice(self.allocator, batch) catch freeLines(self.allocator, batch);
+        }
+        self.wake();
     }
 
     pub fn pushSignal(self: *UpdateQueue, kind: UpdateKind, source: UpdateSource, batch: u64) void {
@@ -57,13 +80,16 @@ pub const UpdateQueue = struct {
     }
 
     fn push(self: *UpdateQueue, kind: UpdateKind, source: UpdateSource, line: ?[]const u8, batch: u64) void {
-        self.mutex.lockUncancelable(io_compat.globalIo());
-        defer self.mutex.unlock(io_compat.globalIo());
-        self.items.append(self.allocator, .{ .kind = kind, .source = source, .line = line, .batch = batch }) catch {
-            if (line) |owned_line| {
-                self.allocator.free(owned_line);
-            }
-        };
+        {
+            self.mutex.lockUncancelable(io_compat.globalIo());
+            defer self.mutex.unlock(io_compat.globalIo());
+            self.items.append(self.allocator, .{ .kind = kind, .source = source, .line = line, .batch = batch }) catch {
+                if (line) |owned_line| {
+                    self.allocator.free(owned_line);
+                }
+            };
+        }
+        self.wake();
     }
 
     pub fn nextBatchId(self: *UpdateQueue) u64 {
@@ -85,6 +111,8 @@ pub const UpdateQueue = struct {
     pub fn drain(self: *UpdateQueue) []const ItemUpdate {
         self.mutex.lockUncancelable(io_compat.globalIo());
         defer self.mutex.unlock(io_compat.globalIo());
+        // cleared under the lock: a push after this point wakes us again
+        self.wake_pending.store(false, .release);
         if (self.items.items.len == 0) {
             return &[_]ItemUpdate{};
         }
@@ -383,4 +411,43 @@ test "menuItemFromIpc keeps the item id" {
     try std.testing.expectEqualStrings("w:1", with_id.id.?);
     const without = menuItemFromIpc(allocator, "{\"label\":\"Safari\"}").?;
     try std.testing.expect(without.id == null);
+}
+
+const WakeCounter = struct {
+    var calls: usize = 0;
+    fn wake(_: ?*anyopaque) void {
+        calls += 1;
+    }
+};
+
+test "pushes wake the consumer once until it drains" {
+    const allocator = std.testing.allocator;
+    var queue = UpdateQueue.init(allocator);
+    defer {
+        queue.reset();
+        queue.items.deinit(allocator);
+    }
+    WakeCounter.calls = 0;
+
+    // no hook yet: pushes just queue
+    queue.pushSignal(.append, .ipc, 0);
+    try std.testing.expectEqual(@as(usize, 0), WakeCounter.calls);
+
+    // installing the hook asks for a drain of what is already queued
+    queue.setWake(WakeCounter.wake, null);
+    try std.testing.expectEqual(@as(usize, 1), WakeCounter.calls);
+
+    // coalesced while the wake is outstanding
+    queue.pushSignal(.append, .ipc, 0);
+    queue.pushSignal(.set, .ipc, 1);
+    try std.testing.expectEqual(@as(usize, 1), WakeCounter.calls);
+
+    allocator.free(queue.drain());
+    queue.pushSignal(.stream_closed, .stdin, 0);
+    try std.testing.expectEqual(@as(usize, 2), WakeCounter.calls);
+
+    // an empty drain still rearms the wake
+    allocator.free(queue.drain());
+    queue.pushSignal(.append, .ipc, 0);
+    try std.testing.expectEqual(@as(usize, 3), WakeCounter.calls);
 }

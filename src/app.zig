@@ -2,6 +2,7 @@ const std = @import("std");
 const objc = @import("objc");
 const appconfig = @import("config.zig");
 const cache = @import("cache.zig");
+const callbacks = @import("app/callbacks.zig");
 const classes = @import("app/classes.zig");
 const logic = @import("app/logic.zig");
 const objc_helpers = @import("app/objc_helpers.zig");
@@ -410,11 +411,12 @@ pub fn run(config: appconfig.Config) !void {
     time_compat.startupStage("model_ready");
 
     if (queue.queue) |queue_ptr| {
+        // pushes wake the main queue; this also drains anything queued during startup
+        if (config.follow_stdin or config.ipc_only) {
+            queue_ptr.setWake(callbacks.wakeMainThread, null);
+        }
         if (config.follow_stdin and !config.ipc_only) {
             _ = std.Thread.spawn(.{}, followStdinThread, .{queue_ptr}) catch {};
-        }
-        if (config.follow_stdin or config.ipc_only) {
-            scheduleTimer(0.2, handler, "onUpdateTimer:", true);
         }
     }
 

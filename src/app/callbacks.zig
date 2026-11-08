@@ -340,20 +340,36 @@ pub fn onFocusLossTimer(target: objc.c.id, sel: objc.c.SEL, timer: objc.c.id) ca
     std.process.exit(exit_codes.user_canceled);
 }
 
-pub fn onUpdateTimer(target: objc.c.id, sel: objc.c.SEL, timer: objc.c.id) callconv(.c) void {
+extern "c" var _dispatch_main_q: anyopaque;
+extern "c" fn dispatch_async_f(queue: *anyopaque, context: ?*anyopaque, work: *const fn (?*anyopaque) callconv(.c) void) void;
+
+/// UpdateQueue wake hook: runs on the pushing thread, drains on the main queue
+pub fn wakeMainThread(ctx: ?*anyopaque) void {
+    dispatch_async_f(&_dispatch_main_q, ctx, drainOnMainQueue);
+}
+
+fn drainOnMainQueue(ctx: ?*anyopaque) callconv(.c) void {
+    _ = ctx;
+    drainUpdates();
+}
+
+/// one-shot fired when a delayed stream-close auto-accept may be due
+pub fn onAutoAcceptTimer(target: objc.c.id, sel: objc.c.SEL, timer: objc.c.id) callconv(.c) void {
     _ = target;
     _ = sel;
     _ = timer;
 
     const app_state = state.g_state orelse return;
+    if (app_state.pending_stream_close_auto_accept) {
+        logic.maybeAutoAccept(app_state, .stream_close);
+    }
+}
+
+fn drainUpdates() void {
+    const app_state = state.g_state orelse return;
     const queue = app_state.update_queue orelse return;
     const updates_slice = queue.drain();
-    if (updates_slice.len == 0) {
-        if (app_state.pending_stream_close_auto_accept) {
-            logic.maybeAutoAccept(app_state, .stream_close);
-        }
-        return;
-    }
+    if (updates_slice.len == 0) return;
 
     var saw_stream_closed = false;
     var latest_set_batch: ?u64 = null;

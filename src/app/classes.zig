@@ -16,8 +16,8 @@ fn inputHandlerClass() objc.Class {
     if (!cls.addMethod("onFocusLossTimer:", callbacks.onFocusLossTimer)) {
         @panic("failed to add onFocusLossTimer: method");
     }
-    if (!cls.addMethod("onUpdateTimer:", callbacks.onUpdateTimer)) {
-        @panic("failed to add onUpdateTimer: method");
+    if (!cls.addMethod("onAutoAcceptTimer:", callbacks.onAutoAcceptTimer)) {
+        @panic("failed to add onAutoAcceptTimer: method");
     }
     if (!cls.addMethod("onRenderBench:", render_bench.onRenderBench)) {
         @panic("failed to add onRenderBench: method");

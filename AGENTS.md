@@ -15,7 +15,7 @@
 - `src/cli.zig` and `src/cli/` handle arguments, environment variables, config files, and path resolution; `src/config.zig` defines settings and defaults.
 - `src/accept.zig` decides what accepting prints (selection, first match, custom query, IPC payload) as plain testable Zig.
 - `src/menu.zig` owns menu items and the model; `src/search.zig` and `src/search/` implement matching and scoring.
-- `src/ipc.zig` defines IPC messages and socket paths; `src/app/updates.zig` queues stdin/IPC updates for the GUI thread using `std.Io.Mutex`.
+- `src/ipc.zig` defines IPC messages and socket paths; `src/app/updates.zig` queues stdin/IPC updates for the GUI thread using `std.Io.Mutex`; a push wakes the main queue (`dispatch_async_f`, coalesced by an atomic flag) which drains in `callbacks.drainUpdates`, so there is no polling timer.
 - `src/cache.zig` persists query/selection state; `src/pid.zig` enforces a single instance per menu ID.
 - `src/exit_codes.zig`: 0 accept, 1 error (including empty stdin), 2 user cancel (Esc, focus loss). Older docs saying Esc exits 1 are stale.
 - `src/io_compat.zig` and `src/time_compat.zig` centralize I/O and clock helpers.
