@@ -14,6 +14,8 @@ pub const AppState = struct {
     table_view: objc.Object,
     text_field: objc.Object,
     match_label: objc.Object,
+    /// small spinning indicator left of the counter, shown while the client is loading
+    spinner: objc.Object,
     message_label: objc.Object,
     handler: objc.Object,
     row_font: objc.Object,
@@ -41,7 +43,14 @@ pub const AppState = struct {
     pending_stream_close_auto_accept: bool,
     had_focus: bool,
     hovered_row: ?usize,
+    /// width of the list (and search field background), for the header layout
+    list_width: f64,
+    /// true while the latest IPC update said more are coming
+    client_loading: bool = false,
 };
+
+/// indent of the search text inside its background
+pub const search_text_inset: f64 = 10.0;
 
 /// Cmd+digit hints; the shortcut is Cmd+1 .. Cmd+9, not the bare digit
 pub const digit_labels = [_][:0]const u8{

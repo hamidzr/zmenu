@@ -68,6 +68,14 @@ pub fn nsFontMonospacedDigit(size: f64, weight: f64) objc.Object {
     return NSFont.msgSend(objc.Object, "monospacedDigitSystemFontOfSize:weight:", .{ size, weight });
 }
 
+/// natural width of single-line text in a font
+pub fn textWidth(font: objc.Object, text: [*:0]const u8) f64 {
+    const NSDictionary = objc.getClass("NSDictionary").?;
+    const attributes = NSDictionary.msgSend(objc.Object, "dictionaryWithObject:forKey:", .{ font, nsString("NSFont") });
+    const size = nsString(text).msgSend(NSSize, "sizeWithAttributes:", .{attributes});
+    return @ceil(size.width);
+}
+
 /// Full line box height for a font, used to size and centre single-line labels.
 pub fn lineHeight(font: objc.Object) f64 {
     const ascender = font.msgSend(f64, "ascender", .{});

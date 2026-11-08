@@ -2,6 +2,7 @@ const std = @import("std");
 const io_compat = @import("io_compat.zig");
 const calc = @import("calc.zig");
 const ipc = @import("ipc.zig");
+const scope = @import("scope.zig");
 const search = @import("search.zig");
 const template = @import("template.zig");
 
@@ -164,6 +165,14 @@ pub const Model = struct {
     regular: std.ArrayList(usize),
     /// template items (calc, prefix, fallback), ascending
     templates: std.ArrayList(usize),
+    /// client-declared search scopes, owned by `scope_arena`
+    scopes: []const scope.Scope = &.{},
+    scope_arena: std.heap.ArenaAllocator,
+    /// the scope the query selected, and the items of its kind
+    active_scope: ?usize = null,
+    scoped: std.ArrayList(usize),
+    /// bytes of the query before the searched text (a scope's prefix)
+    search_offset: usize = 0,
     /// what the list shows, top to bottom
     rows: std.ArrayList(Row),
     /// owns the `Expanded` text of the current rows
@@ -216,6 +225,8 @@ pub const Model = struct {
             .view = .empty,
             .regular = .empty,
             .templates = .empty,
+            .scope_arena = std.heap.ArenaAllocator.init(allocator),
+            .scoped = .empty,
             .rows = .empty,
             .row_arena = std.heap.ArenaAllocator.init(allocator),
             .scores = scores,
@@ -239,6 +250,8 @@ pub const Model = struct {
         self.regular.deinit(allocator);
         self.rows.deinit(allocator);
         self.templates.deinit(allocator);
+        self.scoped.deinit(allocator);
+        self.scope_arena.deinit();
         self.row_arena.deinit();
         self.seen.deinit(allocator);
         allocator.free(self.items);
@@ -289,9 +302,11 @@ pub const Model = struct {
 
     fn refilter(self: *Model, query: []const u8, opts: search.Options) void {
         @memset(self.scores, 0);
+        const candidates = self.selectScope(query);
+        const text = query[self.search_offset..];
         var fold_buf: [512]u8 = undefined;
-        const folded_query = search.fold.foldBuf(&fold_buf, query);
-        search.filterDocs(self.docs, self.candidates.items, folded_query, opts, &self.matches, &self.regular, &self.view);
+        const folded_query = search.fold.foldBuf(&fold_buf, text);
+        search.filterDocs(self.docs, candidates, folded_query, opts, &self.matches, &self.regular, &self.view);
         self.match_count = self.matches.items.len;
         for (self.matches.items) |match| {
             if (match.index < self.scores.len) {
@@ -301,6 +316,51 @@ pub const Model = struct {
         self.buildRows(query);
     }
 
+    /// Picks the scope the query starts with, if any, and returns the items to
+    /// search: those of the scope's kind, else every regular item.
+    fn selectScope(self: *Model, query: []const u8) []const usize {
+        self.active_scope = null;
+        self.search_offset = 0;
+        self.scoped.clearRetainingCapacity();
+        const hit = scope.match(self.scopes, query) orelse return self.candidates.items;
+        self.active_scope = hit.index;
+        self.search_offset = query.len - hit.rest.len;
+        const kind = self.scopes[hit.index].kind;
+        for (self.candidates.items) |item_index| {
+            const item_kind = self.items[item_index].kind orelse continue;
+            if (std.mem.eql(u8, item_kind, kind)) self.scoped.appendAssumeCapacity(item_index);
+        }
+        return self.scoped.items;
+    }
+
+    /// the part of the query that is searched and highlighted
+    pub fn searchText(self: *const Model, query: []const u8) []const u8 {
+        return query[@min(self.search_offset, query.len)..];
+    }
+
+    /// label of the active scope, for the counter
+    pub fn scopeLabel(self: *const Model) ?[]const u8 {
+        const index = self.active_scope orelse return null;
+        return scope.displayLabel(self.scopes[index]);
+    }
+
+    /// Replaces the scope list. Strings are copied; the list takes effect at the next filter.
+    pub fn setScopes(self: *Model, new_scopes: []const scope.Scope) !void {
+        _ = self.scope_arena.reset(.retain_capacity);
+        self.scopes = &.{};
+        self.active_scope = null;
+        const arena = self.scope_arena.allocator();
+        const copy = try arena.alloc(scope.Scope, new_scopes.len);
+        for (new_scopes, copy) |source, *target| {
+            target.* = .{
+                .prefix = try arena.dupe(u8, source.prefix),
+                .kind = try arena.dupe(u8, source.kind),
+                .label = try arena.dupe(u8, source.label),
+            };
+        }
+        self.scopes = copy;
+    }
+
     /// Rows are [calc] [active prefix] [regular matches] [fallbacks when there
     /// is no regular match]; the template rows are expanded for this query.
     fn buildRows(self: *Model, query: []const u8) void {
@@ -308,10 +368,12 @@ pub const Model = struct {
         self.rows.clearRetainingCapacity();
         const has_query = std.mem.trim(u8, query, " \t\r\n").len > 0;
 
-        if (has_query) self.appendCalcRows(query);
-        self.appendPrefixRows(query);
+        // a scope hides the template rows
+        const templated = self.active_scope == null;
+        if (templated and has_query) self.appendCalcRows(query);
+        if (templated) self.appendPrefixRows(query);
         for (self.regular.items) |item_index| self.rows.appendAssumeCapacity(.{ .item = item_index });
-        if (has_query and self.regular.items.len == 0) self.appendTemplateRows(.fallback, query, query, null);
+        if (templated and has_query and self.regular.items.len == 0) self.appendTemplateRows(.fallback, query, query, null);
     }
 
     fn appendCalcRows(self: *Model, query: []const u8) void {
@@ -350,8 +412,10 @@ pub const Model = struct {
         self.rows.appendAssumeCapacity(.{ .item = item_index, .expanded = expanded });
     }
 
-    /// items that count in the "n / total" counter: everything but template items
-    pub fn regularTotal(self: *const Model) usize {
+    /// Items the "n / total" counter counts: the regular items, or those of the
+    /// active scope; template items never count. Valid after a filter.
+    pub fn counterTotal(self: *const Model) usize {
+        if (self.active_scope != null) return self.scoped.items.len;
         return self.candidates.items.len;
     }
 
@@ -371,6 +435,7 @@ pub const Model = struct {
     fn reserveRows(self: *Model, allocator: std.mem.Allocator, count: usize) !void {
         try self.candidates.ensureTotalCapacity(allocator, count);
         try self.templates.ensureTotalCapacity(allocator, count);
+        try self.scoped.ensureTotalCapacity(allocator, count);
         try self.view.ensureTotalCapacity(allocator, count);
         try self.matches.ensureTotalCapacity(allocator, count);
         try self.regular.ensureTotalCapacity(allocator, count);
@@ -939,11 +1004,11 @@ test "template items stay out of the counter total" {
     const allocator = std.testing.allocator;
     var model = try launcherModel(allocator);
     defer model.deinit(allocator);
-    try std.testing.expectEqual(@as(usize, 2), model.regularTotal());
+    try std.testing.expectEqual(@as(usize, 2), model.counterTotal());
     try model.appendItems(allocator, &.{idItem("x", "X")});
-    try std.testing.expectEqual(@as(usize, 3), model.regularTotal());
+    try std.testing.expectEqual(@as(usize, 3), model.counterTotal());
     try model.prependItems(allocator, &.{templateItem("t", "T {q}", .fallback, "")});
-    try std.testing.expectEqual(@as(usize, 3), model.regularTotal());
+    try std.testing.expectEqual(@as(usize, 3), model.counterTotal());
     model.applyFilter("g hi", .{});
     try std.testing.expectEqual(@as(usize, 0), model.match_count);
     try std.testing.expectEqual(@as(usize, 4), model.rowCount());
@@ -999,4 +1064,108 @@ test "template rows show only when an item is a template" {
     try std.testing.expectEqual(@as(usize, 0), model.rowCount());
     model.applyFilter("zzqq", .{});
     try std.testing.expectEqual(@as(usize, 0), model.rowCount());
+}
+
+fn kindItem(id: [:0]const u8, label: [:0]const u8, kind: []const u8) MenuItem {
+    return .{ .label = label, .index = 0, .icon = null, .id = id, .kind = kind };
+}
+
+fn scopedModel(allocator: std.mem.Allocator) !Model {
+    var model = try Model.init(allocator, try testItems(allocator, &.{}), false);
+    try model.setItems(allocator, &.{
+        kindItem("t1", "Inbox - Gmail", "tab"),
+        kindItem("t2", "Gmail settings", "tab"),
+        kindItem("w1", "Gmail - Safari", "window"),
+        kindItem("a1", "Gmail", "app"),
+        idItem("plain", "gmail notes"),
+        templateItem("g", "Tab search {q}", .prefix, "t "),
+        templateItem("web", "Search the web for {q}", .fallback, ""),
+    });
+    try model.setScopes(&.{
+        .{ .prefix = "t", .kind = "tab", .label = "Tabs" },
+        .{ .prefix = "w", .kind = "window", .label = "" },
+    });
+    return model;
+}
+
+test "a scope query only searches items of its kind" {
+    const allocator = std.testing.allocator;
+    var model = try scopedModel(allocator);
+    defer model.deinit(allocator);
+
+    model.applyFilter("t gmail", .{});
+    try expectRows(&model, &.{ "Gmail settings", "Inbox - Gmail" });
+    try std.testing.expectEqualStrings("Tabs", model.scopeLabel().?);
+    try std.testing.expectEqual(@as(usize, 2), model.counterTotal());
+    try std.testing.expectEqual(@as(usize, 2), model.match_count);
+    try std.testing.expectEqualStrings("gmail", model.searchText("t gmail"));
+
+    // no scope: every regular item, the counter total is all of them
+    model.applyFilter("gmail", .{});
+    try std.testing.expect(model.scopeLabel() == null);
+    try std.testing.expectEqual(@as(usize, 5), model.counterTotal());
+    try std.testing.expectEqual(@as(usize, 5), model.rowCount());
+    try std.testing.expectEqualStrings("gmail", model.searchText("gmail"));
+}
+
+test "an empty scope remainder lists every item of the kind" {
+    const allocator = std.testing.allocator;
+    var model = try scopedModel(allocator);
+    defer model.deinit(allocator);
+    model.applyFilter("w ", .{});
+    try expectRows(&model, &.{"Gmail - Safari"});
+    try std.testing.expectEqualStrings("window", model.scopeLabel().?);
+    model.applyFilter("T ", .{});
+    try expectRows(&model, &.{ "Inbox - Gmail", "Gmail settings" });
+    // the bare prefix is just a query
+    model.applyFilter("t", .{});
+    try std.testing.expect(model.scopeLabel() == null);
+}
+
+test "an active scope hides templates and wins over a prefix item" {
+    const allocator = std.testing.allocator;
+    var model = try scopedModel(allocator);
+    defer model.deinit(allocator);
+    // "t " is also a prefix item's prefix: the scope takes the query
+    model.applyFilter("t gmail", .{});
+    for (0..model.rowCount()) |row| try std.testing.expect(model.rowItem(row).template == .none);
+    // nothing in scope matches: no fallbacks either, so no rows at all
+    model.applyFilter("t zzqq", .{ .levenshtein_fallback = false });
+    try std.testing.expectEqual(@as(usize, 0), model.rowCount());
+    try std.testing.expectEqual(@as(isize, -1), model.selected);
+    // without the scope the prefix item is live again
+    try model.setScopes(&.{});
+    model.applyFilter("t zzqq", .{ .levenshtein_fallback = false });
+    try expectRows(&model, &.{ "Tab search zzqq", "Search the web for t zzqq" });
+}
+
+test "scope match leaves scope-less items out and new scope lists replace the old" {
+    const allocator = std.testing.allocator;
+    var model = try scopedModel(allocator);
+    defer model.deinit(allocator);
+    model.applyFilter("t ", .{});
+    try std.testing.expectEqual(@as(usize, 2), model.rowCount());
+
+    try model.setScopes(&.{.{ .prefix = "a", .kind = "app", .label = "Apps" }});
+    model.applyFilter("t gmail", .{});
+    try std.testing.expect(model.scopeLabel() == null);
+    model.applyFilter("a gm", .{});
+    try expectRows(&model, &.{"Gmail"});
+    try std.testing.expectEqualStrings("Apps", model.scopeLabel().?);
+
+    try model.setScopes(&.{});
+    model.applyFilter("a gm", .{});
+    try std.testing.expect(model.scopeLabel() == null);
+}
+
+test "selection by id is kept inside a scope" {
+    const allocator = std.testing.allocator;
+    var model = try scopedModel(allocator);
+    defer model.deinit(allocator);
+    model.applyFilter("t gmail", .{});
+    model.moveSelection(1);
+    try std.testing.expectEqualStrings("t1", model.selectedItem().?.id.?);
+    try model.prependItems(allocator, &.{kindItem("t0", "New Gmail tab", "tab")});
+    model.applyFilterKeepSelection("t gmail", .{});
+    try std.testing.expectEqualStrings("t1", model.selectedItem().?.id.?);
 }

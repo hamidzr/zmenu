@@ -411,8 +411,22 @@ pub fn drainUpdates() void {
     var append_items = std.ArrayList(menu.MenuItem).empty;
     defer append_items.deinit(app_state.allocator);
 
+    var meta_arena = std.heap.ArenaAllocator.init(app_state.allocator);
+    defer meta_arena.deinit();
+    var meta: ?updates.Meta = null;
     for (updates_slice) |update| {
         if (update.kind == .stream_closed) continue;
+        if (update.kind == .meta) {
+            if (update.line) |line| {
+                if (updates.parseMeta(meta_arena.allocator(), line)) |parsed| {
+                    // the last message wins for loading; scopes stay until a message sends a list
+                    const scopes = parsed.scopes orelse if (meta) |previous| previous.scopes else null;
+                    meta = .{ .loading = parsed.loading, .scopes = scopes };
+                }
+                queue.allocator.free(line);
+            }
+            continue;
+        }
         if (update.kind == .set and latest_set_batch != null and update.batch != latest_set_batch.?) {
             if (update.line) |line| {
                 queue.allocator.free(line);
@@ -435,10 +449,23 @@ pub fn drainUpdates() void {
             .set => set_items.append(app_state.allocator, item) catch {},
             .prepend => prepend_items.append(app_state.allocator, item) catch {},
             .append => append_items.append(app_state.allocator, item) catch {},
-            .stream_closed => unreachable,
+            .stream_closed, .meta => unreachable,
         }
     }
     queue.allocator.free(updates_slice);
+
+    // scopes before items: the refilter below sees both
+    var meta_changed = false;
+    if (meta) |applied| {
+        if (app_state.client_loading != applied.loading) {
+            app_state.client_loading = applied.loading;
+            meta_changed = true;
+        }
+        if (applied.scopes) |scopes| {
+            app_state.model.setScopes(scopes) catch {};
+            meta_changed = true;
+        }
+    }
 
     const has_set = latest_set_batch != null;
     const has_item_updates = has_set or prepend_items.items.len > 0 or append_items.items.len > 0;
@@ -454,7 +481,7 @@ pub fn drainUpdates() void {
     // the first update (or the end of the stream) ends "Loading..."
     const first_load = !app_state.loaded and (has_item_updates or saw_stream_closed);
     if (first_load) app_state.loaded = true;
-    if (has_item_updates or first_load) {
+    if (has_item_updates or first_load or meta_changed) {
         logic.applyItemUpdate(app_state);
     }
     if (saw_stream_closed) {

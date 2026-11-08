@@ -138,7 +138,8 @@ pub fn configureItemCell(app_state: *state.AppState, cell: objc.Object, row: usi
     var label_ranges: []const highlight.Range = label_buffer[0..0];
     var subtitle_ranges: []const highlight.Range = subtitle_buffer[0..0];
     if (model.rowIsMatch(row)) {
-        const query = state.currentQuery(app_state);
+        // in a scope only the text after its prefix is matched
+        const query = model.searchText(state.currentQuery(app_state));
         const method = app_state.config.search.method;
         label_ranges = highlight.matchRanges(label, query, method, &label_buffer);
         if (subtitle) |text| subtitle_ranges = highlight.matchRanges(text, query, method, &subtitle_buffer);
@@ -252,10 +253,7 @@ fn layoutDetail(app_state: *state.AppState, cell: objc.Object, label_view: objc.
 
 /// natural width of the detail text, plus the text cell's side insets
 fn detailTextWidth(app_state: *state.AppState, text: [:0]const u8) f64 {
-    const NSDictionary = objc.getClass("NSDictionary").?;
-    const attributes = NSDictionary.msgSend(objc.Object, "dictionaryWithObject:forKey:", .{ app_state.detail_font, nsString("NSFont") });
-    const size = nsString(text).msgSend(NSSize, "sizeWithAttributes:", .{attributes});
-    return @ceil(size.width) + detail_text_inset;
+    return objc_helpers.textWidth(app_state.detail_font, text) + detail_text_inset;
 }
 
 /// NSTextFieldCell draws its text this far in from each side

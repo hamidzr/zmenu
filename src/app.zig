@@ -222,7 +222,7 @@ pub fn run(cli_config: appconfig.Config) !void {
         .origin = .{ .x = padding, .y = header_center_y - field_height / 2.0 },
         .size = .{ .width = list_width, .height = field_height },
     };
-    const text_inset: f64 = 10.0;
+    const text_inset: f64 = state.search_text_inset;
     const counter_right_inset: f64 = 12.0;
     const field_rect = NSRect{
         .origin = .{ .x = padding + text_inset, .y = header_center_y - search_line_height / 2.0 },
@@ -299,6 +299,23 @@ pub fn run(cli_config: appconfig.Config) !void {
     match_label.msgSend(void, "setAlignment:", .{@as(c_int, 2)});
     match_label.msgSend(void, "setTextColor:", .{palette.secondary});
     match_label.msgSend(void, "setFont:", .{counter_font});
+
+    // small spinner left of the counter while the client says more is coming
+    const spinner_rect = NSRect{
+        .origin = .{
+            .x = padding + search_width - layout.spinner_side - 6.0,
+            .y = header_center_y - layout.spinner_side / 2.0,
+        },
+        .size = .{ .width = layout.spinner_side, .height = layout.spinner_side },
+    };
+    const spinner = objc.getClass("NSProgressIndicator").?.msgSend(objc.Object, "alloc", .{})
+        .msgSend(objc.Object, "initWithFrame:", .{spinner_rect});
+    spinner.msgSend(void, "setStyle:", .{@as(c_ulong, 1)}); // NSProgressIndicatorStyleSpinning
+    spinner.msgSend(void, "setControlSize:", .{@as(c_ulong, 1)}); // NSControlSizeSmall
+    spinner.msgSend(void, "setIndeterminate:", .{true});
+    spinner.msgSend(void, "setDisplayedWhenStopped:", .{false});
+    spinner.msgSend(void, "setHidden:", .{true});
+    spinner.msgSend(void, "setAutoresizingMask:", .{ns_view_min_y_margin});
 
     // "Loading..." / "No results" line over the empty list, pinned to the first row slot
     const message_font = nsFontWeight(clamp(config.row_height * 0.46, 13.0, 16.0), font_weight_medium);
@@ -419,6 +436,7 @@ pub fn run(cli_config: appconfig.Config) !void {
     content_view.msgSend(void, "addSubview:", .{text_field});
     if (match_label_width > 0) {
         content_view.msgSend(void, "addSubview:", .{match_label});
+        content_view.msgSend(void, "addSubview:", .{spinner});
     }
 
     // no socket in snapshot mode: opening one would replace a live instance's
@@ -433,6 +451,7 @@ pub fn run(cli_config: appconfig.Config) !void {
         .table_view = table_view,
         .text_field = text_field,
         .match_label = match_label,
+        .spinner = spinner,
         .message_label = message_label,
         .handler = handler,
         .row_font = table_font,
@@ -454,6 +473,7 @@ pub fn run(cli_config: appconfig.Config) !void {
         .pending_stream_close_auto_accept = false,
         .had_focus = false,
         .hovered_row = null,
+        .list_width = list_width,
     };
     defer app_state.model.deinit(allocator);
     state.g_state = &app_state;

@@ -45,6 +45,41 @@ pub const Metrics = struct {
     }
 };
 
+/// Header geometry: the search field, the optional loading spinner and the
+/// counter share one line. The counter grows with its text (a scope label makes
+/// it longer) and the search field gives way.
+pub const counter_min_width: f64 = 88.0;
+const counter_text_pad: f64 = 4.0;
+const counter_max_fraction: f64 = 0.45;
+pub const counter_right_inset: f64 = 12.0;
+pub const spinner_side: f64 = 16.0;
+const spinner_gap: f64 = 6.0;
+const field_gap: f64 = 10.0;
+
+pub const Header = struct {
+    /// width of the search text field
+    search_width: f64,
+    counter_x: f64,
+    counter_width: f64,
+    spinner_x: f64,
+};
+
+/// `padding` is the window margin, `text_inset` the search field's indent in its
+/// background, `text_width` the counter text's natural width.
+pub fn header(padding: f64, list_width: f64, text_inset: f64, text_width: f64, spinner: bool) Header {
+    const counter_width = std.math.clamp(text_width + counter_text_pad, counter_min_width, @max(list_width * counter_max_fraction, counter_min_width));
+    const counter_x = padding + list_width - counter_right_inset - counter_width;
+    const spinner_x = counter_x - spinner_gap - spinner_side;
+    const right_limit = if (spinner) spinner_x else counter_x;
+    const field_x = padding + text_inset;
+    return .{
+        .search_width = @max(right_limit - field_gap - field_x, 0.0),
+        .counter_x = counter_x,
+        .counter_width = counter_width,
+        .spinner_x = spinner_x,
+    };
+}
+
 /// a row's detail text takes at most this share of the row width
 pub const detail_max_fraction: f64 = 0.30;
 
@@ -136,4 +171,37 @@ test "detail takes its own width up to 30 percent of the row" {
     try std.testing.expectEqual(@as(f64, 180), detailWidth(400, 600));
     try std.testing.expectEqual(@as(f64, 0), detailWidth(-3, 600));
     try std.testing.expectEqual(@as(f64, 0), detailWidth(50, -10));
+}
+
+test "default header matches the fixed 100pt counter column" {
+    const h = header(14, 872, 10, 40, false);
+    try std.testing.expectEqual(@as(f64, 88), h.counter_width);
+    try std.testing.expectEqual(@as(f64, 14 + 872 - 100), h.counter_x);
+    // field spans from its inset to 10pt short of the counter column
+    try std.testing.expectEqual(@as(f64, (14 + 872 - 100) - 10 - 24), h.search_width);
+}
+
+test "a long counter widens its column and narrows the search field" {
+    const narrow = header(14, 872, 10, 60, false);
+    const wide = header(14, 872, 10, 150, false);
+    try std.testing.expectEqual(@as(f64, 154), wide.counter_width);
+    try std.testing.expect(wide.counter_x < narrow.counter_x);
+    try std.testing.expect(wide.search_width < narrow.search_width);
+    // never past 45% of the list
+    const huge = header(14, 872, 10, 5000, false);
+    try std.testing.expectApproxEqAbs(@as(f64, 392.4), huge.counter_width, 1e-9);
+}
+
+test "the spinner sits left of the counter and takes room from the field" {
+    const plain = header(14, 872, 10, 60, false);
+    const spun = header(14, 872, 10, 60, true);
+    try std.testing.expectEqual(plain.counter_x, spun.counter_x);
+    try std.testing.expectEqual(plain.counter_x - 6 - 16, spun.spinner_x);
+    try std.testing.expectEqual(plain.search_width - 22, spun.search_width);
+}
+
+test "a tiny list never gets negative widths" {
+    const h = header(14, 60, 10, 200, true);
+    try std.testing.expect(h.search_width >= 0);
+    try std.testing.expect(h.counter_width >= counter_min_width);
 }

@@ -13,6 +13,14 @@ pub const UpdateKind = enum {
     prepend,
     set,
     stream_closed,
+    /// line is a `Meta` JSON object: the loading flag and, when sent, the scope list
+    meta,
+};
+
+/// per-message state riding along with the items; `scopes` null keeps the old list
+pub const Meta = struct {
+    loading: bool = false,
+    scopes: ?[]const ipc.Scope = null,
 };
 
 pub const UpdateSource = enum {
@@ -351,11 +359,15 @@ pub fn handleIpcPayload(queue: *UpdateQueue, payload: []const u8) void {
         .append => .append,
         .prepend => .prepend,
     };
-    const items = parsed.value.items orelse return;
+    const items = parsed.value.items orelse &[_]std.json.Value{};
+    // an items-less message is only useful when it carries state
+    if (parsed.value.items == null and parsed.value.loading == null and parsed.value.scopes == null) return;
 
     const batch_id = queue.nextBatchId();
     var batch = std.ArrayList(ItemUpdate).empty;
     defer batch.deinit(queue.allocator);
+    // first, so one drain applies the scopes before the items are filtered
+    pushMeta(queue, &batch, .{ .loading = parsed.value.loading orelse false, .scopes = parsed.value.scopes }, batch_id);
     for (items) |value| {
         if (!isUsableItem(value)) continue;
 
@@ -368,11 +380,24 @@ pub fn handleIpcPayload(queue: *UpdateQueue, payload: []const u8) void {
             queue.allocator.free(payload_copy);
         };
     }
-    if (kind == .set and batch.items.len == 0) {
-        queue.pushSignal(.set, .ipc, batch_id);
-        return;
+    if (kind == .set and batch.items.len == 1) {
+        // only the meta entry: still clears the list
+        batch.append(queue.allocator, .{ .kind = .set, .source = .ipc, .line = null, .batch = batch_id }) catch {};
     }
     queue.pushBatchOwned(batch.items);
+}
+
+fn pushMeta(queue: *UpdateQueue, batch: *std.ArrayList(ItemUpdate), meta: Meta, batch_id: u64) void {
+    var json_out: std.Io.Writer.Allocating = .init(queue.allocator);
+    defer json_out.deinit();
+    std.json.Stringify.value(meta, .{ .emit_null_optional_fields = false }, &json_out.writer) catch return;
+    const line = queue.allocator.dupe(u8, json_out.written()) catch return;
+    batch.append(queue.allocator, .{ .kind = .meta, .source = .ipc, .line = line, .batch = batch_id }) catch queue.allocator.free(line);
+}
+
+/// parses a queued meta line; the result lives in `arena`
+pub fn parseMeta(arena: std.mem.Allocator, line: []const u8) ?Meta {
+    return std.json.parseFromSliceLeaky(Meta, arena, line, .{ .ignore_unknown_fields = true }) catch null;
 }
 
 /// an object whose label is a non-blank string
@@ -433,9 +458,66 @@ test "empty IPC set enqueues a clear signal" {
     handleIpcPayload(&queue, "{\"v\":2,\"cmd\":\"set\",\"items\":[]}");
     const drained = queue.drain();
     defer allocator.free(drained);
-    try std.testing.expectEqual(@as(usize, 1), drained.len);
-    try std.testing.expectEqual(UpdateKind.set, drained[0].kind);
-    try std.testing.expect(drained[0].line == null);
+    defer for (drained) |update| if (update.line) |line| allocator.free(line);
+    try std.testing.expectEqual(@as(usize, 2), drained.len);
+    try std.testing.expectEqual(UpdateKind.meta, drained[0].kind);
+    try std.testing.expectEqual(UpdateKind.set, drained[1].kind);
+    try std.testing.expect(drained[1].line == null);
+}
+
+test "loading and scopes ride along as a meta entry" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var queue = UpdateQueue.init(std.testing.allocator);
+    defer {
+        queue.reset();
+        queue.items.deinit(std.testing.allocator);
+    }
+    handleIpcPayload(&queue, "{\"v\":3,\"cmd\":\"set\",\"loading\":true," ++
+        "\"scopes\":[{\"prefix\":\"t\",\"kind\":\"tab\",\"label\":\"Tabs\"}],\"items\":[{\"label\":\"a\"}]}");
+    const drained = queue.drain();
+    defer {
+        for (drained) |update| if (update.line) |line| queue.allocator.free(line);
+        queue.allocator.free(drained);
+    }
+    try std.testing.expectEqual(@as(usize, 2), drained.len);
+    try std.testing.expectEqual(UpdateKind.meta, drained[0].kind);
+    const meta = parseMeta(arena.allocator(), drained[0].line.?).?;
+    try std.testing.expect(meta.loading);
+    try std.testing.expectEqualStrings("tab", meta.scopes.?[0].kind);
+    try std.testing.expectEqualStrings("Tabs", meta.scopes.?[0].label);
+    try std.testing.expectEqual(UpdateKind.set, drained[1].kind);
+}
+
+test "a message without loading or scopes resets them" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var queue = UpdateQueue.init(std.testing.allocator);
+    defer {
+        queue.reset();
+        queue.items.deinit(std.testing.allocator);
+    }
+    handleIpcPayload(&queue, "{\"v\":2,\"cmd\":\"append\",\"items\":[{\"label\":\"a\"}]}");
+    const drained = queue.drain();
+    defer {
+        for (drained) |update| if (update.line) |line| queue.allocator.free(line);
+        queue.allocator.free(drained);
+    }
+    const meta = parseMeta(arena.allocator(), drained[0].line.?).?;
+    try std.testing.expect(!meta.loading);
+    try std.testing.expect(meta.scopes == null);
+}
+
+test "an items-less message with only loading is accepted, one with nothing is not" {
+    var queue = UpdateQueue.init(std.testing.allocator);
+    defer {
+        queue.reset();
+        queue.items.deinit(std.testing.allocator);
+    }
+    handleIpcPayload(&queue, "{\"v\":3,\"cmd\":\"append\"}");
+    try std.testing.expectEqual(@as(usize, 0), queue.items.items.len);
+    handleIpcPayload(&queue, "{\"v\":3,\"cmd\":\"append\",\"loading\":false}");
+    try std.testing.expectEqual(@as(usize, 1), queue.items.items.len);
 }
 
 test "menuItemFromIpc keeps the item id" {
@@ -455,7 +537,8 @@ fn drainedLine(allocator: std.mem.Allocator, queue: *UpdateQueue, index: usize) 
         for (drained) |update| if (update.line) |line| queue.allocator.free(line);
         queue.allocator.free(drained);
     }
-    return allocator.dupe(u8, drained[index].line.?);
+    // entry 0 is the meta of the message
+    return allocator.dupe(u8, drained[index + 1].line.?);
 }
 
 test "queued item payload keeps unknown fields and v3 fields" {
@@ -497,8 +580,8 @@ test "items without a usable label are skipped" {
         for (drained) |update| if (update.line) |line| queue.allocator.free(line);
         queue.allocator.free(drained);
     }
-    try std.testing.expectEqual(@as(usize, 1), drained.len);
-    try std.testing.expectEqualStrings("{\"label\":\"ok\"}", drained[0].line.?);
+    try std.testing.expectEqual(@as(usize, 2), drained.len);
+    try std.testing.expectEqualStrings("{\"label\":\"ok\"}", drained[1].line.?);
 }
 
 test "menuItemFromIpc reads the v3 fields" {

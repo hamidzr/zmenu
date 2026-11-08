@@ -7,6 +7,7 @@ const pid = @import("../pid.zig");
 const time_compat = @import("../time_compat.zig");
 const objc_helpers = @import("objc_helpers.zig");
 const display = @import("../display.zig");
+const layout = @import("../layout.zig");
 const state = @import("state.zig");
 const views = @import("views.zig");
 
@@ -43,14 +44,47 @@ pub fn updateSelection(app_state: *state.AppState) void {
 }
 
 pub fn updateMatchLabel(app_state: *state.AppState) void {
-    var buf: [32]u8 = undefined;
-    const label_z = std.fmt.bufPrintSentinel(
-        &buf,
-        "{d} / {d}",
-        .{ app_state.model.match_count, app_state.model.regularTotal() },
-        0,
-    ) catch return;
-    app_state.match_label.msgSend(void, "setStringValue:", .{objc_helpers.nsString(label_z)});
+    var buf: [160]u8 = undefined;
+    const model = &app_state.model;
+    const text = display.counterText(&buf, model.scopeLabel(), model.match_count, model.counterTotal());
+    app_state.match_label.msgSend(void, "setStringValue:", .{objc_helpers.nsString(text)});
+    layoutHeader(app_state, objc_helpers.textWidth(app_state.counter_font, text));
+}
+
+/// the counter grows with its text, so the search field and spinner give way
+fn layoutHeader(app_state: *state.AppState, counter_text_width: f64) void {
+    const header = layout.header(
+        app_state.config.padding,
+        app_state.list_width,
+        state.search_text_inset,
+        counter_text_width,
+        app_state.client_loading,
+    );
+    setFrameX(app_state.match_label, header.counter_x, header.counter_width);
+    setFrameX(app_state.spinner, header.spinner_x, layout.spinner_side);
+    const spinning = app_state.spinner.msgSend(bool, "isHidden", .{}) == false;
+    if (app_state.client_loading and !spinning) {
+        app_state.spinner.msgSend(void, "setHidden:", .{false});
+        app_state.spinner.msgSend(void, "startAnimation:", .{@as(objc.c.id, null)});
+    } else if (!app_state.client_loading and spinning) {
+        app_state.spinner.msgSend(void, "stopAnimation:", .{@as(objc.c.id, null)});
+        app_state.spinner.msgSend(void, "setHidden:", .{true});
+    }
+    const field_frame = app_state.text_field.msgSend(objc_helpers.NSRect, "frame", .{});
+    if (@abs(field_frame.size.width - header.search_width) > 0.5) {
+        var resized = field_frame;
+        resized.size.width = header.search_width;
+        app_state.text_field.msgSend(void, "setFrame:", .{resized});
+    }
+}
+
+/// moves and resizes a view horizontally, leaving y and height alone
+fn setFrameX(view: objc.Object, x: f64, width: f64) void {
+    var frame = view.msgSend(objc_helpers.NSRect, "frame", .{});
+    if (@abs(frame.origin.x - x) < 0.5 and @abs(frame.size.width - width) < 0.5) return;
+    frame.origin.x = x;
+    frame.size.width = width;
+    view.msgSend(void, "setFrame:", .{frame});
 }
 
 pub fn applyFilter(app_state: *state.AppState, query: []const u8) void {
@@ -73,6 +107,7 @@ fn refreshView(app_state: *state.AppState, query: []const u8) void {
         app_state.model.items.len,
         app_state.model.rowCount(),
         query,
+        app_state.client_loading,
     );
     fitWindow(app_state);
     // the hint column keeps its width whether or not hints are active, so the
