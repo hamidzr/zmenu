@@ -1,5 +1,6 @@
 const std = @import("std");
 const objc = @import("objc");
+const actions = @import("../actions.zig");
 const layout = @import("../layout.zig");
 const objc_helpers = @import("objc_helpers.zig");
 const highlight = @import("../search/highlight.zig");
@@ -69,7 +70,7 @@ pub fn setCellText(cell: objc.Object, text: [*:0]const u8, color: objc.Object) v
 /// for that. Call after any selection change.
 pub fn restyleSelection(app_state: *state.AppState) void {
     const previous = app_state.styled_selected_row;
-    const current = app_state.model.selectedRow();
+    const current = app_state.view().selectedRow();
     app_state.styled_selected_row = current;
     if (previous) |row| restyleRow(app_state, row);
     if (current) |row| {
@@ -77,9 +78,14 @@ pub fn restyleSelection(app_state: *state.AppState) void {
     }
 }
 
+/// restyles one row after something besides the selection changed (a confirm prompt)
+pub fn refreshRow(app_state: *state.AppState, row: usize) void {
+    restyleRow(app_state, row);
+}
+
 fn restyleRow(app_state: *state.AppState, row: usize) void {
-    if (row >= app_state.model.rowCount()) return;
-    const selected = app_state.model.selectedRow() == row;
+    if (row >= app_state.view().rowCount()) return;
+    const selected = app_state.view().selectedRow() == row;
     const palette = app_state.palette;
     if (cellAt(app_state, "index", row)) |cell| {
         const label = cell.msgSend(objc.Object, "textField", .{});
@@ -123,7 +129,7 @@ const ns_text_alignment_right: c_ulong = 1;
 pub fn configureItemCell(app_state: *state.AppState, cell: objc.Object, row: usize) void {
     const label_view = cell.msgSend(objc.Object, "textField", .{});
     if (label_view.value == null) return;
-    const model = &app_state.model;
+    const model = app_state.view();
     const label = model.rowLabel(row);
     const subtitle = model.rowSubtitle(row);
     const selected = model.selectedRow() == row;
@@ -131,7 +137,18 @@ pub fn configureItemCell(app_state: *state.AppState, cell: objc.Object, row: usi
     const color = if (selected) palette.selected_text else palette.text;
     const dim = if (selected) palette.selected_secondary else palette.secondary;
 
-    layoutDetail(app_state, cell, label_view, model.rowItem(row).detail, dim);
+    // a pending confirmation replaces the detail with its prompt
+    var detail = model.rowItem(row).detail;
+    var detail_color = dim;
+    var detail_fraction = layout.detail_max_fraction;
+    if (app_state.confirm.isPending()) {
+        if (app_state.confirm.promptFor(state.rowKey(model, row))) |prompt| {
+            detail = prompt;
+            detail_color = if (selected) palette.warning_selected else palette.warning;
+            detail_fraction = layout.prompt_max_fraction;
+        }
+    }
+    layoutDetail(app_state, cell, label_view, detail, detail_color, detail_fraction);
 
     var label_buffer: [max_highlight_ranges]highlight.Range = undefined;
     var subtitle_buffer: [max_highlight_ranges]highlight.Range = undefined;
@@ -221,7 +238,7 @@ fn styledRowString(app_state: *state.AppState, row: RowString) objc.Object {
 
 /// Shows the detail text right-aligned in the cell, up to 30% of its width, and
 /// gives the label the rest. Without detail the label spans the cell.
-fn layoutDetail(app_state: *state.AppState, cell: objc.Object, label_view: objc.Object, detail: ?[:0]const u8, color: objc.Object) void {
+fn layoutDetail(app_state: *state.AppState, cell: objc.Object, label_view: objc.Object, detail: ?[:0]const u8, color: objc.Object, fraction: f64) void {
     const cell_width = cell.msgSend(NSRect, "frame", .{}).size.width;
     var label_frame = label_view.msgSend(NSRect, "frame", .{});
     var field = cell.msgSend(objc.Object, "viewWithTag:", .{detail_tag});
@@ -241,7 +258,7 @@ fn layoutDetail(app_state: *state.AppState, cell: objc.Object, label_view: objc.
     field.msgSend(void, "setTextColor:", .{color});
     field.msgSend(void, "setHidden:", .{false});
 
-    const width = layout.detailWidth(detailTextWidth(app_state, text), cell_width);
+    const width = layout.detailWidthUpTo(detailTextWidth(app_state, text), cell_width, fraction);
     var field_frame = field.msgSend(NSRect, "frame", .{});
     field_frame.origin.x = @max(cell_width - item_right_pad - width, 0.0);
     field_frame.size.width = width;
@@ -281,6 +298,43 @@ fn makeDetailField(app_state: *state.AppState, cell: objc.Object) objc.Object {
     // pinned to the right edge
     field.msgSend(void, "setAutoresizingMask:", .{@as(c_ulong, 1)});
     return field;
+}
+
+/// Fills the footer bar for the selected row: its Enter action, up to two
+/// alternates and the Cmd+K entry (or the panel's fixed hints), the key glyphs
+/// in the primary color and the labels dim.
+pub fn updateFooter(app_state: *state.AppState) void {
+    if (!app_state.footer_visible) return;
+    var hint: actions.Hint = undefined;
+    if (app_state.panel != null) {
+        hint = actions.panelHint();
+    } else {
+        const model = &app_state.model;
+        const row = model.selectedRow() orelse return;
+        hint = actions.hint(actions.Source.fromItem(model.rowItem(row).*));
+    }
+    var buf: [512]u8 = undefined;
+    const rendered = actions.render(&buf, &hint);
+
+    const NSMutableDictionary = objc.getClass("NSMutableDictionary").?;
+    const NSMutableParagraphStyle = objc.getClass("NSMutableParagraphStyle").?;
+    const NSMutableAttributedString = objc.getClass("NSMutableAttributedString").?;
+    const paragraph = NSMutableParagraphStyle.msgSend(objc.Object, "alloc", .{}).msgSend(objc.Object, "init", .{});
+    _ = paragraph.msgSend(objc.Object, "autorelease", .{});
+    paragraph.msgSend(void, "setLineBreakMode:", .{ns_line_break_truncating_tail});
+    const attributes = NSMutableDictionary.msgSend(objc.Object, "dictionary", .{});
+    attributes.msgSend(void, "setObject:forKey:", .{ app_state.footer_font, nsString("NSFont") });
+    attributes.msgSend(void, "setObject:forKey:", .{ app_state.palette.secondary, nsString("NSColor") });
+    attributes.msgSend(void, "setObject:forKey:", .{ paragraph, nsString("NSParagraphStyle") });
+    const attributed = NSMutableAttributedString.msgSend(objc.Object, "alloc", .{})
+        .msgSend(objc.Object, "initWithString:attributes:", .{ nsString(rendered.text.ptr), attributes });
+    _ = attributed.msgSend(objc.Object, "autorelease", .{});
+    for (rendered.key_spans[0..rendered.span_count]) |span| {
+        const spanned = row_text.Span{ .location = span.location, .length = span.length };
+        addAttribute(attributed, "NSFont", app_state.footer_key_font, spanned);
+        addAttribute(attributed, "NSColor", app_state.palette.text, spanned);
+    }
+    app_state.footer_label.msgSend(void, "setAttributedStringValue:", .{attributed});
 }
 
 /// An icon-only cell view. Reuses the image view across dequeues.
@@ -434,7 +488,7 @@ pub fn refreshHoverAtWindowPoint(app_state: *state.AppState, window_point: NSPoi
 }
 
 fn redrawRow(app_state: *state.AppState, row: usize) void {
-    if (row >= app_state.model.rowCount()) return;
+    if (row >= app_state.view().rowCount()) return;
     const row_view = app_state.table_view.msgSend(objc.Object, "rowViewAtRow:makeIfNecessary:", .{
         @as(c_long, @intCast(row)),
         false,

@@ -19,6 +19,9 @@ fn inputHandlerClass() objc.Class {
     if (!cls.addMethod("onAutoAcceptTimer:", callbacks.onAutoAcceptTimer)) {
         @panic("failed to add onAutoAcceptTimer: method");
     }
+    if (!cls.addMethod("onConfirmTimer:", callbacks.onConfirmTimer)) {
+        @panic("failed to add onConfirmTimer: method");
+    }
     if (!cls.addMethod("onRenderBench:", render_bench.onRenderBench)) {
         @panic("failed to add onRenderBench: method");
     }

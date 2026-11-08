@@ -10,6 +10,11 @@
 //!                                      applied as if received over the socket
 //!   ZMENU_SNAPSHOT_SELECT=<n>          move the selection n rows down as a user move
 //!   ZMENU_SNAPSHOT_APPEARANCE=light|dark  force the app appearance
+//!   ZMENU_SNAPSHOT_ACTIONS=1           open the Cmd+K action panel for the selected row
+//!   ZMENU_SNAPSHOT_ACTIONS_SELECT=<n>  select panel row n (0 is the primary action)
+//!   ZMENU_SNAPSHOT_CONFIRM=<mods|1>    accept with those mods (canonical "alt", "shift+cmd";
+//!                                      1 = plain Enter) to show the confirm prompt; the
+//!                                      accept must need confirming, else it prints and exits
 //!
 //! Vibrancy (NSVisualEffectView) renders empty offscreen, so a solid approximation
 //! of the material is painted behind the content.
@@ -18,6 +23,7 @@ const std = @import("std");
 const objc = @import("objc");
 const callbacks = @import("callbacks.zig");
 const logic = @import("logic.zig");
+const mods_mod = @import("../mods.zig");
 const objc_helpers = @import("objc_helpers.zig");
 const state = @import("state.zig");
 const updates = @import("updates.zig");
@@ -34,6 +40,9 @@ pub const Options = struct {
     ipc_file: ?[:0]const u8,
     select: usize,
     appearance: ?Appearance,
+    actions: bool,
+    actions_select: usize,
+    confirm: ?[:0]const u8,
 };
 
 fn envOptional(allocator: std.mem.Allocator, name: []const u8) ?[:0]const u8 {
@@ -53,11 +62,18 @@ pub fn optionsFromEnv(allocator: std.mem.Allocator) ?Options {
     if (envOptional(allocator, "ZMENU_SNAPSHOT_APPEARANCE")) |text| {
         appearance = std.meta.stringToEnum(Appearance, text);
     }
+    var actions_select: usize = 0;
+    if (envOptional(allocator, "ZMENU_SNAPSHOT_ACTIONS_SELECT")) |text| {
+        actions_select = std.fmt.parseInt(usize, text, 10) catch 0;
+    }
     return .{
         .out_path = out_path,
         .ipc_file = envOptional(allocator, "ZMENU_SNAPSHOT_IPC"),
         .select = select,
         .appearance = appearance,
+        .actions = envOptional(allocator, "ZMENU_SNAPSHOT_ACTIONS") != null,
+        .actions_select = actions_select,
+        .confirm = envOptional(allocator, "ZMENU_SNAPSHOT_CONFIRM"),
     };
 }
 
@@ -141,6 +157,16 @@ fn addBackdrop(app_state: *state.AppState) void {
 pub fn finish(app_state: *state.AppState, options: Options) noreturn {
     if (options.ipc_file) |path| applyIpcFile(app_state, path);
     if (options.select > 0) logic.moveSelectionClamped(app_state, @intCast(options.select));
+    if (options.actions) {
+        logic.openPanel(app_state);
+        if (!logic.panelOpen(app_state)) fail("the selected row has no actions", .{});
+        if (options.actions_select > 0) logic.moveSelectionClamped(app_state, @intCast(options.actions_select));
+    }
+    if (options.confirm) |text| {
+        const held: mods_mod.Mods = if (std.mem.eql(u8, text, "1")) .{} else mods_mod.Mods.parse(text) orelse fail("bad mods {s}", .{text});
+        logic.acceptWith(app_state, held);
+        if (!app_state.confirm.isPending()) fail("nothing is pending after the accept", .{});
+    }
     addBackdrop(app_state);
 
     const content_view = app_state.content_view;

@@ -22,6 +22,7 @@ test {
     _ = @import("mods.zig");
     _ = @import("confirm.zig");
     _ = @import("actions.zig");
+    _ = @import("action_panel.zig");
 }
 
 // A set must become visible to the UI in one drain, never item by item.

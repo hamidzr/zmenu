@@ -1,5 +1,8 @@
 const std = @import("std");
 const menu = @import("menu.zig");
+const mods_mod = @import("mods.zig");
+
+const Mods = mods_mod.Mods;
 
 pub const Decision = union(enum) {
     /// nothing to accept; keep the menu open
@@ -8,8 +11,17 @@ pub const Decision = union(enum) {
     output: struct { label: []const u8, output: []const u8 },
 };
 
+/// What accepting prints for an item the caller holds itself (the action panel
+/// keeps a copy of the item it was opened for).
+pub const Held = struct {
+    label: []const u8,
+    payload: ?[]const u8,
+    arg: ?[]const u8 = null,
+    result: ?[]const u8 = null,
+};
+
 /// `arena` owns the spliced output; the caller prints it and exits
-pub fn decide(arena: std.mem.Allocator, model: *menu.Model, ipc_only: bool, accept_custom_selection: bool, query: []const u8) Decision {
+pub fn decide(arena: std.mem.Allocator, model: *menu.Model, ipc_only: bool, accept_custom_selection: bool, query: []const u8, mods: Mods) Decision {
     if (model.rows.items.len == 0) {
         // ipc-only has no custom selection: there is no payload to print
         if (ipc_only or !accept_custom_selection) return .ignore;
@@ -19,18 +31,29 @@ pub fn decide(arena: std.mem.Allocator, model: *menu.Model, ipc_only: bool, acce
     // no selection falls back to the first row
     const row = model.selectedRow() orelse 0;
     const item = model.rowItem(row);
-    const label = model.rowLabel(row);
-    if (!ipc_only) return .{ .output = .{ .label = label, .output = label } };
-    const payload = item.ipc_payload orelse return .{ .output = .{ .label = label, .output = label } };
     const expanded = model.rows.items[row].expanded;
-    const fields = Fields{
-        .query = query,
+    return decideHeld(arena, .{
+        .label = model.rowLabel(row),
+        .payload = item.ipc_payload,
         .arg = if (expanded) |e| e.arg else null,
         .result = if (expanded) |e| e.result else null,
+    }, ipc_only, query, mods);
+}
+
+/// `query` is the search text the user typed for the item, `mods` the modifiers of the accept
+pub fn decideHeld(arena: std.mem.Allocator, held: Held, ipc_only: bool, query: []const u8, mods: Mods) Decision {
+    if (!ipc_only) return .{ .output = .{ .label = held.label, .output = held.label } };
+    const payload = held.payload orelse return .{ .output = .{ .label = held.label, .output = held.label } };
+    var mods_buf: [mods_mod.canonical_max_len]u8 = undefined;
+    const fields = Fields{
+        .query = query,
+        .mods = mods.canonical(&mods_buf),
+        .arg = held.arg,
+        .result = held.result,
     };
     // a payload that cannot be spliced (cannot happen for stored payloads) goes out as stored
     const output = spliceFields(arena, payload, fields) catch payload;
-    return .{ .output = .{ .label = label, .output = output } };
+    return .{ .output = .{ .label = held.label, .output = output } };
 }
 
 /// what zmenu adds to the stored payload on accept
@@ -91,9 +114,9 @@ test "accept prefers selection and falls back to first match" {
     model.applyFilter("", .{});
 
     model.selected = 1;
-    try expectOutput(decide(arena.allocator(), &model, false, true, ""), "beta", "beta");
+    try expectOutput(decide(arena.allocator(), &model, false, true, "", .{}), "beta", "beta");
     model.selected = -1;
-    try expectOutput(decide(arena.allocator(), &model, false, true, ""), "alpha", "alpha");
+    try expectOutput(decide(arena.allocator(), &model, false, true, "", .{}), "alpha", "alpha");
 }
 
 test "ipc-only accept prints the stored payload with the query, or the label" {
@@ -105,9 +128,9 @@ test "ipc-only accept prints the stored payload with the query, or the label" {
     model.applyFilter("", .{});
 
     model.selected = 0;
-    try expectOutput(decide(arena.allocator(), &model, true, true, ""), "alpha", "{\"label\":\"alpha\",\"id\":\"a\",\"query\":\"\"}");
+    try expectOutput(decide(arena.allocator(), &model, true, true, "", .{}), "alpha", "{\"label\":\"alpha\",\"id\":\"a\",\"query\":\"\"}");
     model.selected = 1;
-    try expectOutput(decide(arena.allocator(), &model, true, true, ""), "beta", "beta");
+    try expectOutput(decide(arena.allocator(), &model, true, true, "", .{}), "beta", "beta");
 }
 
 test "no matches keeps the menu open in ipc-only, else custom or ignore" {
@@ -119,9 +142,9 @@ test "no matches keeps the menu open in ipc-only, else custom or ignore" {
     model.applyFilter("zzz", .{ .levenshtein_fallback = false });
     try std.testing.expectEqual(@as(usize, 0), model.rows.items.len);
 
-    try std.testing.expect(decide(arena.allocator(), &model, true, true, "zzz") == .ignore);
-    try std.testing.expect(decide(arena.allocator(), &model, false, false, "zzz") == .ignore);
-    try expectOutput(decide(arena.allocator(), &model, false, true, "zzz"), "zzz", "zzz");
+    try std.testing.expect(decide(arena.allocator(), &model, true, true, "zzz", .{}) == .ignore);
+    try std.testing.expect(decide(arena.allocator(), &model, false, false, "zzz", .{}) == .ignore);
+    try expectOutput(decide(arena.allocator(), &model, false, true, "zzz", .{}), "zzz", "zzz");
 }
 
 test "splice adds fields, escapes values and lets the injected value win" {
@@ -184,7 +207,7 @@ test "template rows output their arg and result" {
 
     model.applyFilter("g weather", .{});
     model.selected = 0;
-    const prefixed = decide(arena.allocator(), &model, true, false, "g weather");
+    const prefixed = decide(arena.allocator(), &model, true, false, "g weather", .{});
     try std.testing.expectEqualStrings("Search Google for weather", prefixed.output.label);
     try expectJsonField(arena.allocator(), prefixed.output.output, "arg", "weather");
     try expectJsonField(arena.allocator(), prefixed.output.output, "query", "g weather");
@@ -193,9 +216,49 @@ test "template rows output their arg and result" {
 
     model.applyFilter("12*(3+4)", .{});
     model.selected = 0;
-    const calc = decide(arena.allocator(), &model, true, false, "12*(3+4)");
+    const calc = decide(arena.allocator(), &model, true, false, "12*(3+4)", .{});
     try std.testing.expectEqualStrings("84", calc.output.label);
     try expectJsonField(arena.allocator(), calc.output.output, "arg", "12*(3+4)");
     try expectJsonField(arena.allocator(), calc.output.output, "result", "84");
     try expectJsonField(arena.allocator(), calc.output.output, "query", "12*(3+4)");
+}
+
+test "mods are output in canonical order and omitted when empty" {
+    const allocator = std.testing.allocator;
+    var arena = std.heap.ArenaAllocator.init(allocator);
+    defer arena.deinit();
+    var model = try testModel(allocator);
+    defer model.deinit(allocator);
+    model.applyFilter("", .{});
+    model.selected = 0;
+
+    const plain = decide(arena.allocator(), &model, true, true, "q", .{});
+    try expectJsonField(arena.allocator(), plain.output.output, "mods", null);
+    const combo = decide(arena.allocator(), &model, true, true, "q", .{ .cmd = true, .alt = true, .ctrl = true });
+    try expectJsonField(arena.allocator(), combo.output.output, "mods", "ctrl+alt+cmd");
+    try expectJsonField(arena.allocator(), combo.output.output, "id", "a");
+    try expectJsonField(arena.allocator(), combo.output.output, "query", "q");
+    try std.testing.expectEqual(@as(usize, 1), std.mem.count(u8, combo.output.output, "\"mods\""));
+}
+
+test "a held item prints its own payload with the saved query, mods, arg and result" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    const held = Held{
+        .label = "Safari",
+        .payload = "{\"id\":\"win:1\",\"label\":\"Safari\",\"mods\":\"old\"}",
+        .arg = "weather",
+        .result = "84",
+    };
+    const out = decideHeld(a, held, true, "saf", .{ .alt = true });
+    try std.testing.expectEqualStrings("Safari", out.output.label);
+    try expectJsonField(a, out.output.output, "id", "win:1");
+    try expectJsonField(a, out.output.output, "mods", "alt");
+    try expectJsonField(a, out.output.output, "query", "saf");
+    try expectJsonField(a, out.output.output, "arg", "weather");
+    try expectJsonField(a, out.output.output, "result", "84");
+    // without ipc-only, or without a payload, only the label goes out
+    try expectOutput(decideHeld(a, held, false, "saf", .{}), "Safari", "Safari");
+    try expectOutput(decideHeld(a, .{ .label = "x", .payload = null }, true, "q", .{}), "x", "x");
 }

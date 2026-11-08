@@ -20,6 +20,9 @@ pub const Palette = struct {
     field_fill: objc.Object,
     /// tint for matched characters
     accent: objc.Object,
+    /// confirmation prompt, on the plain row and on the selection fill
+    warning: objc.Object,
+    warning_selected: objc.Object,
 };
 
 fn systemColor(name: [:0]const u8) objc.Object {
@@ -57,5 +60,7 @@ pub fn palette(config: appconfig.Config) Palette {
         .hover_fill = hover_fill,
         .field_fill = configured(config.field_background_color) orelse withAlpha(systemColor("labelColor"), 0.06),
         .accent = systemColor("controlAccentColor"),
+        .warning = systemColor("systemOrangeColor"),
+        .warning_selected = systemColor("systemYellowColor"),
     };
 }

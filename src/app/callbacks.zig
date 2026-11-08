@@ -1,6 +1,7 @@
 const std = @import("std");
 const objc = @import("objc");
 const menu = @import("../menu.zig");
+const mods_mod = @import("../mods.zig");
 const exit_codes = @import("../exit_codes.zig");
 const time_compat = @import("../time_compat.zig");
 const objc_helpers = @import("objc_helpers.zig");
@@ -70,6 +71,15 @@ pub fn controlTextViewDoCommandBySelector(
         escape(app_state);
         return true;
     }
+    // Enter with modifiers: the field editor maps Shift/Option/Control+Return to
+    // these commands (Command+Return normally never gets this far, see
+    // performKeyEquivalent). Plain Enter stays with the field's action (onSubmit).
+    if (commandIs(command, &enter_commands)) {
+        const held = currentEventMods();
+        if (held.isEmpty()) return false;
+        logic.acceptWith(app_state, held);
+        return true;
+    }
     if (command == objc.sel("moveUp:").value) {
         logic.moveSelection(app_state, -1);
         return true;
@@ -117,6 +127,16 @@ pub fn controlTextViewDoCommandBySelector(
     return false;
 }
 
+/// every command a Return key press can turn into, depending on its modifiers
+const enter_commands = [_][:0]const u8{
+    "insertNewline:",
+    "insertNewlineIgnoringFieldEditor:",
+    "insertLineBreak:",
+    "insertParagraphSeparator:",
+    "insertLineSeparator:",
+    "insertContainerBreak:",
+};
+
 fn commandIs(command: objc.c.SEL, comptime names: []const [:0]const u8) bool {
     inline for (names) |name| {
         if (command == objc.sel(name).value) return true;
@@ -132,7 +152,7 @@ pub fn onSubmit(target: objc.c.id, sel: objc.c.SEL, sender: objc.c.id) callconv(
     // NSSearchField also fires its action when the query is cleared, so only
     // accept field submits that come from Return/Enter
     if (sender == app_state.text_field.value and !currentEventIsReturnKey()) return;
-    logic.acceptSelection(app_state);
+    logic.acceptWith(app_state, currentEventMods());
 }
 
 /// Single click on a row accepts it. The click also selected the row (marking a
@@ -144,23 +164,43 @@ pub fn onRowClick(target: objc.c.id, sel: objc.c.SEL, sender: objc.c.id) callcon
 
     const app_state = state.g_state orelse return;
     const row = app_state.table_view.msgSend(c_long, "clickedRow", .{});
-    if (row < 0 or @as(usize, @intCast(row)) >= app_state.model.rowCount()) return;
-    app_state.model.selected = row;
+    const model = app_state.view();
+    if (row < 0 or @as(usize, @intCast(row)) >= model.rowCount()) return;
+    model.selected = row;
     logic.acceptSelection(app_state);
 }
 
-fn currentEventIsReturnKey() bool {
-    const NSEventTypeKeyDown: c_ulong = 10;
-    const kVK_Return: c_ushort = 36;
-    const kVK_ANSI_KeypadEnter: c_ushort = 76;
+const NSEventTypeKeyDown: c_ulong = 10;
+const kVK_Return: c_ushort = 36;
+const kVK_ANSI_KeypadEnter: c_ushort = 76;
 
+fn isReturnKeyCode(key_code: c_ushort) bool {
+    return key_code == kVK_Return or key_code == kVK_ANSI_KeypadEnter;
+}
+
+/// the Return/Enter key press being handled, if that is what the current event is
+fn currentReturnEvent() ?objc.Object {
     const app = objc.getClass("NSApplication").?.msgSend(objc.Object, "sharedApplication", .{});
     const event = app.msgSend(objc.c.id, "currentEvent", .{});
-    if (event == null) return false;
+    if (event == null) return null;
     const event_obj = objc.Object.fromId(event);
-    if (event_obj.msgSend(c_ulong, "type", .{}) != NSEventTypeKeyDown) return false;
-    const key_code = event_obj.msgSend(c_ushort, "keyCode", .{});
-    return key_code == kVK_Return or key_code == kVK_ANSI_KeypadEnter;
+    if (event_obj.msgSend(c_ulong, "type", .{}) != NSEventTypeKeyDown) return null;
+    if (!isReturnKeyCode(event_obj.msgSend(c_ushort, "keyCode", .{}))) return null;
+    return event_obj;
+}
+
+fn currentEventIsReturnKey() bool {
+    return currentReturnEvent() != null;
+}
+
+/// the modifiers held on the current Return press; none for any other event
+fn currentEventMods() mods_mod.Mods {
+    const event = currentReturnEvent() orelse return .{};
+    return eventMods(event);
+}
+
+fn eventMods(event: objc.Object) mods_mod.Mods {
+    return mods_mod.Mods.fromFlags(event.msgSend(c_ulong, "modifierFlags", .{}));
 }
 
 /// Table-wide tracking: the row under the pointer drives the hover highlight.
@@ -201,7 +241,7 @@ pub fn numberOfRowsInTableView(target: objc.c.id, sel: objc.c.SEL, table: objc.c
     _ = table;
 
     const app_state = state.g_state orelse return 0;
-    return @intCast(app_state.model.rowCount());
+    return @intCast(app_state.view().rowCount());
 }
 
 pub fn tableViewViewForTableColumn(
@@ -219,7 +259,8 @@ pub fn tableViewViewForTableColumn(
     if (column == null or row < 0) return null;
 
     const row_index: usize = @intCast(row);
-    if (row_index >= app_state.model.rowCount()) return null;
+    const model = app_state.view();
+    if (row_index >= model.rowCount()) return null;
 
     const column_obj = objc.Object.fromId(column);
     const table_view = app_state.table_view;
@@ -235,10 +276,10 @@ pub fn tableViewViewForTableColumn(
             .left_pad = 10.0,
             .right_pad = 2.0,
         });
-        const selected = app_state.model.selectedRow() == row_index;
+        const selected = model.selectedRow() == row_index;
         const hint_color = if (selected) app_state.palette.selected_secondary else app_state.palette.secondary;
         const query = logic.currentQuery(app_state);
-        if (app_state.config.numericSelectionEnabled(app_state.model.rowCount(), query) and row_index < state.digit_labels.len) {
+        if (app_state.config.numericSelectionEnabled(model.rowCount(), query) and row_index < state.digit_labels.len) {
             views.setCellText(cell, state.digit_labels[row_index], hint_color);
         } else {
             views.setCellText(cell, "", hint_color);
@@ -248,7 +289,7 @@ pub fn tableViewViewForTableColumn(
 
     if (app_state.config.show_icons and columnIsIcon(column_obj)) {
         const cell = views.iconCell(table_view, row_height, column_width, "zmenuIconCell");
-        views.setCellImage(cell, iconImage(app_state.model.rowItem(row_index).icon, views.iconSide(row_height, column_width)));
+        views.setCellImage(cell, iconImage(model.rowItem(row_index).icon, views.iconSide(row_height, column_width)));
         return cell.value;
     }
 
@@ -301,7 +342,7 @@ pub fn tableViewShouldSelectRow(
 
     const app_state = state.g_state orelse return true;
     // only user gestures (clicks) reach here; programmatic selection does not
-    app_state.model.moved = true;
+    app_state.view().moved = true;
     syncSelectedRow(app_state, row);
     return true;
 }
@@ -321,8 +362,9 @@ pub fn tableViewSelectionDidChange(target: objc.c.id, sel: objc.c.SEL, notificat
 
 /// mirror a table row into the model, clearing it when out of range
 fn syncSelectedRow(app_state: *state.AppState, row: c_long) void {
-    const in_range = row >= 0 and @as(usize, @intCast(row)) < app_state.model.rowCount();
-    app_state.model.selected = if (in_range) @intCast(row) else -1;
+    const model = app_state.view();
+    const in_range = row >= 0 and @as(usize, @intCast(row)) < model.rowCount();
+    model.selected = if (in_range) @intCast(row) else -1;
 }
 
 fn clearQuery(app_state: *state.AppState) void {
@@ -330,8 +372,17 @@ fn clearQuery(app_state: *state.AppState) void {
     applyUserQuery(app_state, "");
 }
 
-/// Esc clears a non-empty query first, then cancels
+/// Esc closes the action panel, else drops a pending confirmation, else clears
+/// a non-empty query, then cancels
 fn escape(app_state: *state.AppState) void {
+    if (logic.panelOpen(app_state)) {
+        logic.closePanel(app_state);
+        return;
+    }
+    if (app_state.confirm.isPending()) {
+        logic.clearConfirm(app_state);
+        return;
+    }
     if (logic.currentQuery(app_state).len > 0) {
         clearQuery(app_state);
         return;
@@ -383,6 +434,15 @@ pub fn onAutoAcceptTimer(target: objc.c.id, sel: objc.c.SEL, timer: objc.c.id) c
     if (app_state.pending_stream_close_auto_accept) {
         logic.maybeAutoAccept(app_state, .stream_close);
     }
+}
+
+/// one-shot fired when a pending confirmation is due to expire
+pub fn onConfirmTimer(target: objc.c.id, sel: objc.c.SEL, timer: objc.c.id) callconv(.c) void {
+    _ = target;
+    _ = sel;
+    _ = timer;
+    const app_state = state.g_state orelse return;
+    logic.expireConfirm(app_state);
 }
 
 pub fn drainUpdates() void {
@@ -456,6 +516,7 @@ pub fn drainUpdates() void {
 
     // scopes before items: the refilter below sees both
     var meta_changed = false;
+    var scopes_changed = false;
     if (meta) |applied| {
         if (app_state.client_loading != applied.loading) {
             app_state.client_loading = applied.loading;
@@ -464,6 +525,7 @@ pub fn drainUpdates() void {
         if (applied.scopes) |scopes| {
             app_state.model.setScopes(scopes) catch {};
             meta_changed = true;
+            scopes_changed = true;
         }
     }
 
@@ -482,7 +544,7 @@ pub fn drainUpdates() void {
     const first_load = !app_state.loaded and (has_item_updates or saw_stream_closed);
     if (first_load) app_state.loaded = true;
     if (has_item_updates or first_load or meta_changed) {
-        logic.applyItemUpdate(app_state);
+        logic.applyItemUpdate(app_state, has_item_updates or scopes_changed);
     }
     if (saw_stream_closed) {
         app_state.stream_closed = true;
@@ -534,8 +596,26 @@ pub fn performKeyEquivalent(target: objc.c.id, sel: objc.c.SEL, event: objc.c.id
     if (event == null) return false;
 
     const obj = objc.Object.fromId(target);
+    // Enter with modifiers: Command (and usually Control) chords reach here before
+    // the field editor sees them; it only maps the others to commands
+    // (see controlTextViewDoCommandBySelector)
+    if (state.g_state) |app_state| {
+        const event_obj = objc.Object.fromId(event);
+        if (event_obj.msgSend(c_ulong, "type", .{}) == NSEventTypeKeyDown and isReturnKeyCode(event_obj.msgSend(c_ushort, "keyCode", .{}))) {
+            const held = eventMods(event_obj);
+            if (!held.isEmpty()) {
+                logic.acceptWith(app_state, held);
+                return true;
+            }
+        }
+    }
     if (eventChar(event)) |ec| {
         if (state.g_state) |app_state| {
+            // Cmd+K: the action panel
+            if (ec.modifiers == NSEventModifierFlagCommand and std.ascii.toLower(ec.char) == 'k') {
+                logic.togglePanel(app_state);
+                return true;
+            }
             if (controlNavDelta(ec)) |delta| {
                 logic.moveSelection(app_state, delta);
                 return true;
@@ -600,12 +680,13 @@ fn handleNumericShortcut(app_state: *state.AppState, ch: u8) bool {
 }
 
 fn handleNumericShortcutWithQuery(app_state: *state.AppState, ch: u8, query_for_mode: []const u8) bool {
-    if (!app_state.config.numericSelectionEnabled(app_state.model.rowCount(), query_for_mode)) return false;
+    const model = app_state.view();
+    if (!app_state.config.numericSelectionEnabled(model.rowCount(), query_for_mode)) return false;
     if (ch < '1' or ch > '9') return false;
 
     const index: usize = @intCast(ch - '1');
-    if (index < app_state.model.rowCount()) {
-        app_state.model.selected = @intCast(index);
+    if (index < model.rowCount()) {
+        model.selected = @intCast(index);
         logic.updateSelection(app_state);
         logic.acceptSelection(app_state);
     }
@@ -613,6 +694,7 @@ fn handleNumericShortcutWithQuery(app_state: *state.AppState, ch: u8, query_for_
 }
 
 fn applyUserQuery(app_state: *state.AppState, query: []const u8) void {
+    logic.clearConfirm(app_state);
     const first_input = time_compat.recordFirstInput();
     app_state.last_keystroke_ms = time_compat.milliTimestamp();
     logic.applyFilter(app_state, query);

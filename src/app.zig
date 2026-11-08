@@ -429,6 +429,46 @@ pub fn run(cli_config: appconfig.Config) !void {
     });
 
     content_view.msgSend(void, "addSubview:", .{scroll_view});
+
+    // hint bar at the bottom: hidden until some listed row offers actions
+    const footer_font = nsFontWeight(clamp(config.row_height * 0.34, 11.0, 12.5), font_weight_regular);
+    const footer_key_font = nsFontWeight(clamp(config.row_height * 0.34, 11.0, 12.5), objc_helpers.font_weight_semibold);
+    const footer_line_height = lineHeight(footer_font);
+    const NSView = objc.getClass("NSView").?;
+    const footer_view = NSView.msgSend(objc.Object, "alloc", .{})
+        .msgSend(objc.Object, "initWithFrame:", .{NSRect{
+        .origin = .{ .x = 0, .y = 0 },
+        .size = .{ .width = window_width, .height = layout.footer_height },
+    }});
+    // stays pinned to the bottom edge when the window height changes
+    footer_view.msgSend(void, "setAutoresizingMask:", .{@as(c_ulong, 2 | 32)});
+    footer_view.msgSend(void, "setHidden:", .{true});
+    const footer_separator = objc.getClass("NSBox").?.msgSend(objc.Object, "alloc", .{})
+        .msgSend(objc.Object, "initWithFrame:", .{NSRect{
+        .origin = .{ .x = padding, .y = layout.footer_height - 1.0 },
+        .size = .{ .width = list_width, .height = 1.0 },
+    }});
+    footer_separator.msgSend(void, "setBoxType:", .{@as(c_ulong, 2)}); // NSBoxSeparator
+    footer_view.msgSend(void, "addSubview:", .{footer_separator});
+    const footer_label = NSTextField.msgSend(objc.Object, "alloc", .{})
+        .msgSend(objc.Object, "initWithFrame:", .{NSRect{
+        .origin = .{
+            .x = padding + layout.footer_text_inset,
+            .y = (layout.footer_height - 1.0 - footer_line_height) / 2.0 + objc_helpers.label_optical_offset,
+        },
+        .size = .{ .width = @max(list_width - layout.footer_text_inset * 2.0, 0.0), .height = footer_line_height },
+    }});
+    footer_label.msgSend(void, "setBezeled:", .{false});
+    footer_label.msgSend(void, "setBordered:", .{false});
+    footer_label.msgSend(void, "setDrawsBackground:", .{false});
+    footer_label.msgSend(void, "setEditable:", .{false});
+    footer_label.msgSend(void, "setSelectable:", .{false});
+    footer_label.msgSend(void, "setAlignment:", .{@as(c_ulong, 0)});
+    footer_label.msgSend(void, "setFont:", .{footer_font});
+    footer_label.msgSend(void, "setTextColor:", .{palette.secondary});
+    footer_view.msgSend(void, "addSubview:", .{footer_label});
+    content_view.msgSend(void, "addSubview:", .{footer_view});
+
     const field_bg = chrome.makeFieldBackground(field_bg_rect);
     field_bg.msgSend(void, "setAutoresizingMask:", .{ns_view_min_y_margin});
     content_view.msgSend(void, "addSubview:", .{field_bg});
@@ -453,6 +493,9 @@ pub fn run(cli_config: appconfig.Config) !void {
         .match_label = match_label,
         .spinner = spinner,
         .message_label = message_label,
+        .scroll_view = scroll_view,
+        .footer_view = footer_view,
+        .footer_label = footer_label,
         .handler = handler,
         .row_font = table_font,
         .counter_font = counter_font,
@@ -460,6 +503,9 @@ pub fn run(cli_config: appconfig.Config) !void {
         .subtitle_font = nsFontWeight(clamp(config.row_height * 0.46, 13.0, 16.0), font_weight_regular),
         .detail_font = nsFontWeight(clamp(config.row_height * 0.38, 11.0, 13.5), font_weight_regular),
         .hint_font = objc_helpers.nsFontMonospacedDigit(clamp(config.row_height * 0.36, 11.0, 13.0), font_weight_regular),
+        .search_font = search_font,
+        .footer_font = footer_font,
+        .footer_key_font = footer_key_font,
         .palette = palette,
         .config = config,
         .metrics = metrics,
@@ -514,7 +560,7 @@ pub fn run(cli_config: appconfig.Config) !void {
     }
 
     // the initial filter already sized the window; place it from that height
-    if (snap == null) placement.placeOnPointerScreen(window, metrics.windowHeight(metrics.max_rows));
+    if (snap == null) placement.placeOnPointerScreen(window, metrics.windowHeightFor(metrics.max_rows, true));
     time_compat.startupStage("initial_filter");
     if (config.auto_accept) activateApp(app);
     window.msgSend(void, "setAcceptsMouseMovedEvents:", .{true});

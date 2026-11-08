@@ -1,6 +1,8 @@
 const std = @import("std");
 const objc = @import("objc");
+const action_panel = @import("../action_panel.zig");
 const appconfig = @import("../config.zig");
+const confirm = @import("../confirm.zig");
 const display = @import("../display.zig");
 const layout = @import("../layout.zig");
 const menu = @import("../menu.zig");
@@ -17,10 +19,18 @@ pub const AppState = struct {
     /// small spinning indicator left of the counter, shown while the client is loading
     spinner: objc.Object,
     message_label: objc.Object,
+    scroll_view: objc.Object,
+    /// hint bar at the bottom: the container with its separator, and the text
+    footer_view: objc.Object,
+    footer_label: objc.Object,
     handler: objc.Object,
     row_font: objc.Object,
     counter_font: objc.Object,
     hint_font: objc.Object,
+    search_font: objc.Object,
+    /// footer hint text, and the key glyphs in it
+    footer_font: objc.Object,
+    footer_key_font: objc.Object,
     /// matched characters of a row label
     bold_font: objc.Object,
     /// subtitle after the label, and the right-aligned detail
@@ -47,6 +57,19 @@ pub const AppState = struct {
     list_width: f64,
     /// true while the latest IPC update said more are coming
     client_loading: bool = false,
+    footer_visible: bool = false,
+    /// the open Cmd+K action panel; the list then shows its rows, not `model`'s
+    panel: ?*action_panel.Panel = null,
+    /// a two-step accept waiting for its second Enter, and the row showing the prompt
+    confirm: confirm.State = .{},
+    confirm_row: ?usize = null,
+
+    /// the model the list shows: the panel's rows while it is open, else the items.
+    /// IPC updates always go to `model`.
+    pub fn view(self: *AppState) *menu.Model {
+        if (self.panel) |panel| return &panel.model;
+        return &self.model;
+    }
 };
 
 /// indent of the search text inside its background
@@ -65,4 +88,11 @@ pub fn currentQuery(app_state: *AppState) []const u8 {
     const utf8_ptr = text.msgSend(?[*:0]const u8, "UTF8String", .{});
     if (utf8_ptr == null) return "";
     return std.mem.sliceTo(utf8_ptr.?, 0);
+}
+
+/// identity of a list row for the confirm state: its item (id, else label) and template argument
+pub fn rowKey(model: *const menu.Model, row: usize) u64 {
+    const item = model.rowItem(row);
+    const expanded = model.rows.items[row].expanded;
+    return confirm.keyOf(item.id orelse item.label, if (expanded) |e| e.arg else null);
 }
