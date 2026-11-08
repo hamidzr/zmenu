@@ -67,7 +67,8 @@ pub fn controlTextViewDoCommandBySelector(
     const app_state = state.g_state orelse return false;
 
     if (command == objc.sel("cancelOperation:").value) {
-        logic.quit(app_state, exit_codes.user_canceled);
+        escape(app_state);
+        return true;
     }
     if (command == objc.sel("moveUp:").value) {
         logic.moveSelection(app_state, -1);
@@ -273,12 +274,23 @@ fn syncSelectedRow(app_state: *state.AppState, row: c_long) void {
     app_state.model.selected = if (in_range) @intCast(row) else -1;
 }
 
+/// Esc clears a non-empty query first, then cancels
+fn escape(app_state: *state.AppState) void {
+    if (logic.currentQuery(app_state).len > 0) {
+        app_state.text_field.msgSend(void, "setStringValue:", .{nsString("")});
+        applyUserQuery(app_state, "");
+        return;
+    }
+    logic.quit(app_state, exit_codes.user_canceled);
+}
+
 pub fn cancelOperation(target: objc.c.id, sel: objc.c.SEL, sender: objc.c.id) callconv(.c) void {
     _ = target;
     _ = sel;
     _ = sender;
     if (state.g_state) |app_state| {
-        logic.quit(app_state, exit_codes.user_canceled);
+        escape(app_state);
+        return;
     }
     std.process.exit(exit_codes.user_canceled);
 }
