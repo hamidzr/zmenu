@@ -5,7 +5,7 @@ Native macOS AppKit MVP for the gmenu replacement (zmenu).
 ## What it does
 - Reads menu items from stdin (one per line). If stdin is empty, it exits with a non-zero code.
 - Opens a native window with a search field and a list of items.
-- Typing filters the list with a tokenized, case-insensitive fuzzy match (results capped at 10). Ranking prefers an exact label, then a label prefix, then word-start matches and acronyms (`vsc` finds Visual Studio Code), then scattered letters; ties keep the order the client sent. If there are no matches, it falls back to Levenshtein distance suggestions unless disabled.
+- Typing filters the list with a tokenized, case- and accent-insensitive fuzzy match (`cafe` finds Café) (results capped at 10). Ranking prefers an exact label, then a label prefix, then word-start matches and acronyms (`vsc` finds Visual Studio Code), then scattered letters; ties keep the order the client sent. If there are no matches, it falls back to Levenshtein distance suggestions unless disabled.
 - Enter prints the selected (default top) item to stdout and exits 0; Esc clears a non-empty query; Esc on an empty query cancels with a non-zero exit code.
 - Up/Down/Tab move the selection within the filtered list.
 - Double-clicking a row accepts that item.

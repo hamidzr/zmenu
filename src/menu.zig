@@ -90,9 +90,17 @@ pub fn readItems(allocator: std.mem.Allocator, unique: bool) ![]MenuItem {
     return items.toOwnedSlice(allocator);
 }
 
+/// folded search text for a label; an OOM falls back to the raw label
+fn foldLabel(arena: *std.heap.ArenaAllocator, label: []const u8) []const u8 {
+    return search.fold.foldAlloc(arena.allocator(), label) catch label;
+}
+
 pub const Model = struct {
     items: []MenuItem,
+    /// diacritic-folded search text, parallel to items (display uses item.label)
     labels: [][]const u8,
+    /// owns folded copies of labels that contain accents
+    fold_arena: std.heap.ArenaAllocator,
     matches: std.ArrayList(search.Match),
     filtered: std.ArrayList(usize),
     scores: []i32,
@@ -123,10 +131,12 @@ pub const Model = struct {
             }
         }
 
+        var fold_arena = std.heap.ArenaAllocator.init(allocator);
+        errdefer fold_arena.deinit();
         const labels = try allocator.alloc([]const u8, working.len);
         for (working, 0..) |*item, idx| {
             item.index = idx;
-            labels[idx] = item.label[0..item.label.len];
+            labels[idx] = foldLabel(&fold_arena, item.label);
         }
 
         var matches = std.ArrayList(search.Match).empty;
@@ -141,6 +151,7 @@ pub const Model = struct {
         return .{
             .items = working,
             .labels = labels,
+            .fold_arena = fold_arena,
             .matches = matches,
             .filtered = filtered,
             .scores = scores,
@@ -154,6 +165,7 @@ pub const Model = struct {
 
     pub fn deinit(self: *Model, allocator: std.mem.Allocator) void {
         self.clearAnchor();
+        self.fold_arena.deinit();
         self.matches.deinit(allocator);
         self.filtered.deinit(allocator);
         self.seen.deinit(allocator);
@@ -205,7 +217,9 @@ pub const Model = struct {
 
     fn refilter(self: *Model, query: []const u8, opts: search.Options) void {
         @memset(self.scores, 0);
-        search.filterIndices(self.labels, query, opts, &self.matches, &self.filtered);
+        var fold_buf: [512]u8 = undefined;
+        const folded_query = search.fold.foldBuf(&fold_buf, query);
+        search.filterIndices(self.labels, folded_query, opts, &self.matches, &self.filtered);
         self.match_count = self.matches.items.len;
         for (self.matches.items) |match| {
             if (match.index < self.scores.len) {
@@ -266,7 +280,7 @@ pub const Model = struct {
             var item = to_add[i];
             item.index = idx;
             self.items[idx] = item;
-            self.labels[idx] = item.label[0..item.label.len];
+            self.labels[idx] = foldLabel(&self.fold_arena, item.label);
             self.scores[idx] = 0;
         }
 
@@ -299,7 +313,7 @@ pub const Model = struct {
             var item = item_in;
             item.index = idx;
             items[idx] = item;
-            labels[idx] = item.label[0..item.label.len];
+            labels[idx] = foldLabel(&self.fold_arena, item.label);
         }
 
         for (old_items, 0..) |item_in, offset| {
@@ -307,7 +321,7 @@ pub const Model = struct {
             var item = item_in;
             item.index = idx;
             items[idx] = item;
-            labels[idx] = item.label[0..item.label.len];
+            labels[idx] = old_labels[offset];
         }
 
         self.items = items;
@@ -336,11 +350,13 @@ pub const Model = struct {
         self.scores = try allocator.realloc(self.scores, new_len);
         @memset(self.scores, 0);
 
+        // the old folded copies are unreachable once the labels are rebuilt
+        _ = self.fold_arena.reset(.retain_capacity);
         for (to_set, 0..) |item_in, idx| {
             var item = item_in;
             item.index = idx;
             self.items[idx] = item;
-            self.labels[idx] = item.label[0..item.label.len];
+            self.labels[idx] = foldLabel(&self.fold_arena, item.label);
         }
 
         self.matches.clearRetainingCapacity();
@@ -513,4 +529,35 @@ test "query change resets selection and the moved flag" {
     try model.setItems(allocator, &.{ idItem(null, "ab"), idItem(null, "ac") });
     model.applyFilterKeepSelection("a", .{});
     try std.testing.expectEqual(@as(isize, 0), model.selected);
+}
+
+test "accent-insensitive search in both directions" {
+    const allocator = std.testing.allocator;
+    var model = try Model.init(allocator, try testItems(allocator, &.{ "Café Nero", "Éclair shop", "Zürich", "Plain" }), false);
+    defer model.deinit(allocator);
+
+    model.applyFilter("cafe", .{});
+    try std.testing.expectEqual(@as(usize, 1), model.filtered.items.len);
+    try std.testing.expectEqualStrings("Café Nero", model.selectedItem().?.label);
+
+    model.applyFilter("eclair", .{});
+    try std.testing.expectEqualStrings("Éclair shop", model.selectedItem().?.label);
+
+    model.applyFilter("Zurich", .{});
+    try std.testing.expectEqualStrings("Zürich", model.selectedItem().?.label);
+
+    // accented query finds unaccented and accented labels alike
+    model.applyFilter("café", .{});
+    try std.testing.expectEqualStrings("Café Nero", model.selectedItem().?.label);
+
+    // set, prepend and append keep folding
+    try model.setItems(allocator, &.{idItem(null, "Crème brûlée")});
+    try model.prependItems(allocator, &.{idItem(null, "Smörgåsbord")});
+    try model.appendItems(allocator, &.{idItem(null, "Año nuevo")});
+    model.applyFilter("creme brulee", .{});
+    try std.testing.expectEqualStrings("Crème brûlée", model.selectedItem().?.label);
+    model.applyFilter("smorgasbord", .{});
+    try std.testing.expectEqualStrings("Smörgåsbord", model.selectedItem().?.label);
+    model.applyFilter("ano", .{});
+    try std.testing.expectEqualStrings("Año nuevo", model.selectedItem().?.label);
 }
