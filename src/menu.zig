@@ -378,6 +378,26 @@ pub const Model = struct {
         self.selected = @mod(@max(self.selected, 0) + delta, count);
     }
 
+    /// move without wrapping, clamped to the first and last row
+    pub fn moveSelectionClamped(self: *Model, delta: isize) void {
+        self.moved = true;
+        if (self.filtered.items.len == 0) {
+            self.selected = -1;
+            return;
+        }
+
+        const last: isize = @intCast(self.filtered.items.len - 1);
+        self.selected = std.math.clamp(@max(self.selected, 0) +| delta, 0, last);
+    }
+
+    pub fn selectFirst(self: *Model) void {
+        self.moveSelectionClamped(std.math.minInt(isize));
+    }
+
+    pub fn selectLast(self: *Model) void {
+        self.moveSelectionClamped(std.math.maxInt(isize));
+    }
+
     pub fn selectedRow(self: *Model) ?usize {
         if (self.selected < 0) return null;
         const row: usize = @intCast(self.selected);
@@ -560,4 +580,29 @@ test "accent-insensitive search in both directions" {
     try std.testing.expectEqualStrings("Smörgåsbord", model.selectedItem().?.label);
     model.applyFilter("ano", .{});
     try std.testing.expectEqualStrings("Año nuevo", model.selectedItem().?.label);
+}
+
+test "clamped moves stop at the ends and count as user moves" {
+    const allocator = std.testing.allocator;
+    var model = try Model.init(allocator, try testItems(allocator, &.{ "a", "b", "c", "d", "e" }), false);
+    defer model.deinit(allocator);
+    model.applyFilter("", .{});
+    try std.testing.expect(!model.moved);
+
+    model.moveSelectionClamped(3);
+    try std.testing.expectEqual(@as(isize, 3), model.selected);
+    try std.testing.expect(model.moved);
+    model.moveSelectionClamped(3);
+    try std.testing.expectEqual(@as(isize, 4), model.selected);
+    model.moveSelectionClamped(-10);
+    try std.testing.expectEqual(@as(isize, 0), model.selected);
+
+    model.selectLast();
+    try std.testing.expectEqual(@as(isize, 4), model.selected);
+    model.selectFirst();
+    try std.testing.expectEqual(@as(isize, 0), model.selected);
+
+    model.applyFilter("zzzz", .{ .levenshtein_fallback = false });
+    model.selectLast();
+    try std.testing.expectEqual(@as(isize, -1), model.selected);
 }

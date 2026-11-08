@@ -86,6 +86,41 @@ pub fn controlTextViewDoCommandBySelector(
         logic.moveSelection(app_state, -1);
         return true;
     }
+    if (commandIs(command, &.{ "pageDown:", "scrollPageDown:" })) {
+        logic.moveSelectionClamped(app_state, logic.visibleRows(app_state));
+        return true;
+    }
+    if (commandIs(command, &.{ "pageUp:", "scrollPageUp:" })) {
+        logic.moveSelectionClamped(app_state, -logic.visibleRows(app_state));
+        return true;
+    }
+    // Cmd+Up/Down
+    if (commandIs(command, &.{"moveToBeginningOfDocument:"})) {
+        logic.selectEdge(app_state, true);
+        return true;
+    }
+    if (commandIs(command, &.{"moveToEndOfDocument:"})) {
+        logic.selectEdge(app_state, false);
+        return true;
+    }
+    // Home/End: jump in the list only while there is no text to edit
+    if (logic.currentQuery(app_state).len == 0) {
+        if (commandIs(command, &.{"scrollToBeginningOfDocument:"})) {
+            logic.selectEdge(app_state, true);
+            return true;
+        }
+        if (commandIs(command, &.{"scrollToEndOfDocument:"})) {
+            logic.selectEdge(app_state, false);
+            return true;
+        }
+    }
+    return false;
+}
+
+fn commandIs(command: objc.c.SEL, comptime names: []const [:0]const u8) bool {
+    inline for (names) |name| {
+        if (command == objc.sel(name).value) return true;
+    }
     return false;
 }
 
@@ -440,6 +475,12 @@ pub fn performKeyEquivalent(target: objc.c.id, sel: objc.c.SEL, event: objc.c.id
 
     const obj = objc.Object.fromId(target);
     if (eventChar(event)) |ec| {
+        if (state.g_state) |app_state| {
+            if (controlNavDelta(ec)) |delta| {
+                logic.moveSelection(app_state, delta);
+                return true;
+            }
+        }
         if ((ec.modifiers & NSEventModifierFlagCommand) != 0) {
             if (ec.char == 'a' or ec.char == 'A') {
                 obj.msgSend(void, "selectText:", .{@as(objc.c.id, null)});
@@ -455,6 +496,17 @@ pub fn performKeyEquivalent(target: objc.c.id, sel: objc.c.SEL, event: objc.c.id
 
     const NSSearchField = objc.getClass("NSSearchField").?;
     return obj.msgSendSuper(NSSearchField, bool, "performKeyEquivalent:", .{event});
+}
+
+/// Ctrl+N/J move down, Ctrl+P/K move up. Taken over here so Ctrl+K never
+/// reaches the field's delete-to-end-of-line binding.
+fn controlNavDelta(ec: EventChar) ?isize {
+    if (ec.modifiers != NSEventModifierFlagControl) return null;
+    return switch (std.ascii.toLower(ec.char)) {
+        'n', 'j' => 1,
+        'p', 'k' => -1,
+        else => null,
+    };
 }
 
 const EventChar = struct {

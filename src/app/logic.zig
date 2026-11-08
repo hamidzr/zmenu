@@ -95,6 +95,24 @@ pub fn moveSelection(app_state: *state.AppState, delta: isize) void {
     updateSelection(app_state);
 }
 
+/// page moves, edges and Home/End: no wrapping
+pub fn moveSelectionClamped(app_state: *state.AppState, delta: isize) void {
+    app_state.model.moveSelectionClamped(delta);
+    updateSelection(app_state);
+}
+
+pub fn selectEdge(app_state: *state.AppState, first: bool) void {
+    if (first) app_state.model.selectFirst() else app_state.model.selectLast();
+    updateSelection(app_state);
+}
+
+/// rows that fit in the visible part of the list, at least one
+pub fn visibleRows(app_state: *state.AppState) isize {
+    const rect = app_state.table_view.msgSend(objc_helpers.NSRect, "visibleRect", .{});
+    const row_height = @max(app_state.config.row_height, 1.0);
+    return @max(1, @as(isize, @intFromFloat(@floor(rect.size.height / row_height))));
+}
+
 pub fn currentQuery(app_state: *state.AppState) []const u8 {
     const text = app_state.text_field.msgSend(objc.Object, "stringValue", .{});
     const utf8_ptr = text.msgSend(?[*:0]const u8, "UTF8String", .{});
