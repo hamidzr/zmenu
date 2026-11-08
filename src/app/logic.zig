@@ -201,7 +201,7 @@ pub fn saveCache(app_state: *state.AppState, selection: []const u8) void {
 
 pub fn acceptSelection(app_state: *state.AppState) void {
     const config = app_state.config;
-    switch (accept.decide(&app_state.model, config.ipc_only, config.accept_custom_selection, currentQuery(app_state))) {
+    switch (accept.decide(app_state.allocator, &app_state.model, config.ipc_only, config.accept_custom_selection, currentQuery(app_state))) {
         .ignore => return,
         .output => |out| outputAndQuit(app_state, out.label, out.output),
     }
