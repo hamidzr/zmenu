@@ -2,6 +2,8 @@
 
 Native macOS AppKit MVP for the gmenu replacement (zmenu).
 
+Product page: [zmenu on Latent Byte](https://latentbyte.com/products/zmenu?utm_source=zmenu&utm_medium=github&utm_campaign=website).
+
 ## What it does
 - Reads menu items from stdin (one per line). If stdin is empty, it exits with a non-zero code.
 - Opens a native window with a search field and a list of items.
