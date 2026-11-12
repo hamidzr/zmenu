@@ -1,6 +1,6 @@
 # zmenu
 
-zmenu is a fast, native fuzzy menu for macOS, in the spirit of dmenu, rofi and choose. Pipe a list into it, pick an item in a popup search window, and the choice comes back on stdout. It is written in Zig against AppKit, starts in tens of milliseconds, and also takes live item updates over a local socket.
+zmenu is a fast, native dmenu alternative for macOS: a fuzzy menu in the spirit of dmenu, rofi and choose. Pipe a list into it, pick an item in a popup search window, and the choice comes back on stdout. It is written in Zig against AppKit, starts in tens of milliseconds, and also takes live item updates over a local socket.
 
 ![zmenu window with fuzzy-matched rows, icons, subtitles and an action footer](docs/images/zmenu.png)
 
