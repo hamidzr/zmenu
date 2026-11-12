@@ -1,8 +1,34 @@
 # zmenu
 
-Native macOS AppKit MVP for the gmenu replacement (zmenu).
+zmenu is a fast, native fuzzy menu for macOS, in the spirit of dmenu, rofi and choose. Pipe a list into it, pick an item in a popup search window, and the choice comes back on stdout. It is written in Zig against AppKit, starts in tens of milliseconds, and also takes live item updates over a local socket.
 
-Product page: [zmenu on Latent Byte](https://latentbyte.com/products/zmenu?utm_source=zmenu&utm_medium=github&utm_campaign=website).
+![zmenu window with fuzzy-matched rows, icons, subtitles and an action footer](docs/images/zmenu.png)
+
+Product page: [zmenu on Latent Byte](https://latentbyte.com/products/zmenu?utm_source=zmenu&utm_medium=github&utm_campaign=website). zmenu replaces [gmenu](https://github.com/hamidzr/gmenu), the earlier Go version, and reads the same `GMENU_*` settings and config files.
+
+## Install
+
+zmenu builds from source. You need macOS, [Zig](https://ziglang.org/download/) 0.17, [just](https://github.com/casey/just) and the Xcode Command Line Tools:
+
+```bash
+xcode-select --install          # skip if already installed
+brew install zig just
+git clone https://github.com/hamidzr/zmenu
+cd zmenu
+just install                    # builds and copies zmenu and zmenuctl to ~/.local/bin
+```
+
+Make sure `~/.local/bin` is on your `PATH`. Without `just`, run `zig build` and copy `zig-out/bin/zmenu` and `zig-out/bin/zmenuctl` anywhere on your `PATH`.
+
+## Quick start
+
+```bash
+printf "alpha\nbravo\ncharlie\n" | zmenu                         # prints the picked line
+git branch --format='%(refname:short)' | zmenu | xargs git switch  # branch switcher
+open -a "$(ls /Applications | sed 's/\.app$//' | zmenu)"          # app launcher
+```
+
+Exit codes tell a script what happened: 0 when an item was accepted, 2 when the user pressed Esc or clicked away, 1 on errors such as empty stdin. Bind any of these to a hotkey (skhd, Hammerspoon, Raycast script, BetterTouchTool) for a keyboard launcher.
 
 ## What it does
 - Reads menu items from stdin (one per line). If stdin is empty, it exits with a non-zero code.
@@ -19,12 +45,7 @@ Product page: [zmenu on Latent Byte](https://latentbyte.com/products/zmenu?utm_s
 - A pid file in the temp dir prevents multiple instances per menu id.
 - When `menu_id` is set, the last query + selection are stored under `~/.cache/gmenu/<menu_id>/cache.yaml`. Cache dir is created 0700 and cache.yaml / pid files 0600.
 
-## Requirements
-- macOS
-- Zig 0.17.0
-- Xcode Command Line Tools (for AppKit headers)
-
-## Run
+## Run from a checkout
 Provide stdin, then launch the app:
 
 ```bash
@@ -32,33 +53,6 @@ printf "alpha\nbravo\ncharlie\n" | zig build run
 ```
 
 If you run without stdin, zmenu exits with an error.
-
-### Visual regression
-`just visual` captures a snapshot of the UI using `scripts/visual_test.sh`. The first run writes
-`samples/visual_baseline.png`; set `UPDATE_SNAPSHOT=1` to refresh the baseline. The script relies
-on macOS Accessibility + Screen Recording permissions to capture the window.
-
-### Spawn benchmark
-`just bench` (or `scripts/bench_spawn.sh`) measures cold spawn-to-accept latency with hyperfine.
-It feeds a single item so `--auto-accept` fires without user interaction. Note this exits before
-`app.run()`, so it is a process-init/filter floor, not paint-to-visible.
-
-### Render benchmark
-`just render-bench` (or `scripts/render_bench.sh`, `COUNT=2000` by default) measures table
-reload + paint cost. It runs `zmenu --render-bench`, which shows the window, types the first
-item's label one character at a time (filter + reload + paint per keystroke), accepts the item,
-and exits. It prints per-keystroke stats plus spawn-to-window time, and times the whole flow
-with hyperfine when available. The table is view-based (`tableView:viewForTableColumn:row:` and
-a custom `NSTableRowView`), so `selection_color` draws the row highlight.
-
-### Startup keyboard benchmark
-`just startup-bench` (or `scripts/startup_bench.sh`) sends real keyboard events at fixed offsets
-from process launch and checks the complete query. An owned test window catches early keys.
-Requires existing macOS Accessibility and event-posting permissions.
-Use `--binary "$(command -v zmenu)" --ready --accept --profile` to test the installed executable,
-or `--mode ipc --ipc-items` to include dynamic item delivery through `zmenuctl`.
-`zmenu --startup-profile` logs timestamp-only startup stages to stderr, including the first
-accepted text change. See [startup measurements and limits](docs/STARTUP_PERFORMANCE.md).
 
 ### Config + CLI
 Supported flags: `--menu-id/-m`, `--initial-query/-q`, `--search-method/-s`, `--preserve-order/-o`, `--no-levenshtein-fallback`, `--auto-accept`, `--terminal`, `--follow-stdin`, `--ipc-only`, `--numeric-selection-mode`, `--no-numeric-selection`, `--show-icons`, `--title/-t`, `--prompt/-p`, `--min-width`, `--min-height`, `--max-width`, `--max-height`, `--row-height`, `--field-height`, `--padding`, `--numeric-column-width`, `--icon-column-width`, `--alternate-rows`, `--background-color`, `--list-background-color`, `--field-background-color`, `--text-color`, `--secondary-text-color`, `--selection-color`, `--corner-radius`, `--no-vibrancy`, `--vibrancy=`, `--init-config`, `--render-bench`, `--startup-profile`.
@@ -158,6 +152,37 @@ Example stdout:
 - Set `numeric_selection_mode: on` to always enable numeric shortcuts, or `off` to always disable them.
 - `no_numeric_selection` and `GMENU_NO_NUMERIC_SELECTION` are still supported as legacy on/off aliases.
 - Terminal mode is intentionally minimal and chooses the first match on Enter.
+
+## Development
+
+`just check` runs formatting checks and tests, `just snapshot` renders the UI offscreen to `zig-out/snapshots/` without taking focus.
+
+### Visual regression
+`just visual` captures a snapshot of the UI using `scripts/visual_test.sh`. The first run writes
+`samples/visual_baseline.png`; set `UPDATE_SNAPSHOT=1` to refresh the baseline. The script relies
+on macOS Accessibility + Screen Recording permissions to capture the window.
+
+### Spawn benchmark
+`just bench` (or `scripts/bench_spawn.sh`) measures cold spawn-to-accept latency with hyperfine.
+It feeds a single item so `--auto-accept` fires without user interaction. Note this exits before
+`app.run()`, so it is a process-init/filter floor, not paint-to-visible.
+
+### Render benchmark
+`just render-bench` (or `scripts/render_bench.sh`, `COUNT=2000` by default) measures table
+reload + paint cost. It runs `zmenu --render-bench`, which shows the window, types the first
+item's label one character at a time (filter + reload + paint per keystroke), accepts the item,
+and exits. It prints per-keystroke stats plus spawn-to-window time, and times the whole flow
+with hyperfine when available. The table is view-based (`tableView:viewForTableColumn:row:` and
+a custom `NSTableRowView`), so `selection_color` draws the row highlight.
+
+### Startup keyboard benchmark
+`just startup-bench` (or `scripts/startup_bench.sh`) sends real keyboard events at fixed offsets
+from process launch and checks the complete query. An owned test window catches early keys.
+Requires existing macOS Accessibility and event-posting permissions.
+Use `--binary "$(command -v zmenu)" --ready --accept --profile` to test the installed executable,
+or `--mode ipc --ipc-items` to include dynamic item delivery through `zmenuctl`.
+`zmenu --startup-profile` logs timestamp-only startup stages to stderr, including the first
+accepted text change. See [startup measurements and limits](docs/STARTUP_PERFORMANCE.md).
 
 ## Support
 
