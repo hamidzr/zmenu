@@ -35,9 +35,9 @@ cat >"$TAP_DIR/Formula/zmenu.rb" <<EOF
 class Zmenu < Formula
   desc "Fast native fuzzy menu for macOS, a dmenu alternative"
   homepage "https://latentbyte.com/products/zmenu"
-  license "MIT"
   url "$URL"
   sha256 "$SHA"
+  license "MIT"
   head "https://github.com/$REPO.git", branch: "main"
 
   depends_on "zig" => :build
