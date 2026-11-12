@@ -15,6 +15,7 @@
         "build.zig.zon",
         "src",
         "README.md",
+        "LICENSE",
         "PLAN.md",
     },
 }

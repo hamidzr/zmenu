@@ -191,3 +191,7 @@ accepted text change. See [startup measurements and limits](docs/STARTUP_PERFORM
 ## Support
 
 zmenu is free. If it saves you time, you can [support us](https://latentbyte.com/support-us?app=zmenu&utm_source=zmenu&utm_medium=github&utm_campaign=support) with a tip.
+
+## License
+
+[MIT](LICENSE)
