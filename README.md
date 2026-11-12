@@ -15,10 +15,10 @@ xcode-select --install          # skip if already installed
 brew install zig just
 git clone https://github.com/hamidzr/zmenu
 cd zmenu
-just install                    # builds and copies zmenu and zmenuctl to ~/.local/bin
+just install                    # optimized build of zmenu and zmenuctl into ~/.local/bin
 ```
 
-Make sure `~/.local/bin` is on your `PATH`. Without `just`, run `zig build` and copy `zig-out/bin/zmenu` and `zig-out/bin/zmenuctl` anywhere on your `PATH`.
+Make sure `~/.local/bin` is on your `PATH`. Without `just`, run `zig build -Doptimize=ReleaseFast --prefix ~/.local`.
 
 ## Quick start
 

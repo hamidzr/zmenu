@@ -65,10 +65,8 @@ render-bench:
 startup-bench:
 	scripts/startup_bench.sh
 
-# build and copy binaries to ~/.local/bin
-install: build
-	mkdir -p ~/.local/bin
+# optimized build of zmenu and zmenuctl into ~/.local/bin (zig-out/ stays the debug dev build)
+install:
 	rm -f ~/.local/bin/zmenu ~/.local/bin/zmenuctl
-	cp zig-out/bin/zmenu zig-out/bin/zmenuctl ~/.local/bin/
-	chmod +x ~/.local/bin/zmenu ~/.local/bin/zmenuctl
+	zig build -Doptimize=ReleaseFast --prefix ~/.local
 
