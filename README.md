@@ -8,11 +8,15 @@ Product page: [zmenu on Latent Byte](https://latentbyte.com/products/zmenu?utm_s
 
 ## Install
 
-zmenu builds from source. You need macOS, [Zig](https://ziglang.org/download/) 0.17, [just](https://github.com/casey/just) and the Xcode Command Line Tools:
+With Homebrew (builds from source, needs the Xcode Command Line Tools):
 
 ```bash
-xcode-select --install          # skip if already installed
-brew install zig just
+brew install latentbyte/tap/zmenu
+```
+
+From a checkout, with [Zig](https://ziglang.org/download/) 0.17 and [just](https://github.com/casey/just):
+
+```bash
 git clone https://github.com/hamidzr/zmenu
 cd zmenu
 just install                    # optimized build of zmenu and zmenuctl into ~/.local/bin
