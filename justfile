@@ -70,3 +70,7 @@ install:
 	rm -f ~/.local/bin/zmenu ~/.local/bin/zmenuctl
 	zig build -Doptimize=ReleaseFast --prefix ~/.local
 
+
+# tag the build.zig.zon version, push the tag, and write the Homebrew formula into ../homebrew-tap
+release:
+	scripts/release.sh
