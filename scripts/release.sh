@@ -43,6 +43,8 @@ class Zmenu < Formula
   depends_on "zig" => :build
   depends_on :macos
 
+  conflicts_with "combo-switcher", because: "both install a zmenu binary"
+
   def install
     system "zig", "build", *std_zig_args
   end
